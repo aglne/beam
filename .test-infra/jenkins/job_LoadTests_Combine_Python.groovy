@@ -24,13 +24,13 @@ def now = new Date().format("MMddHHmmss", TimeZone.getTimeZone('UTC'))
 
 def loadTestConfigurations = { datasetName -> [
         [
-                title        : 'Combine Python Load test: 2GB 10 byte records',
-                itClass      : 'apache_beam.testing.load_tests.combine_test:CombineTest.testCombineGlobally',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                sdk          : CommonTestProperties.SDK.PYTHON,
-                jobProperties: [
+                title          : 'Combine Python Load test: 2GB 10 byte records',
+                test           : 'apache_beam.testing.load_tests.combine_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         job_name             : 'load-tests-python-dataflow-batch-combine-1-' + now,
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         temp_location        : 'gs://temp-storage-for-perf-tests/smoketests',
                         publish_to_big_query : true,
                         metrics_dataset      : datasetName,
@@ -39,64 +39,19 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_records": 200000000,' +
                                 '"key_size": 1,' +
                                 '"value_size": 9}\'',
-                        max_num_workers      : 5,
                         num_workers          : 5,
                         autoscaling_algorithm: "NONE",
                         top_count            : 20,
                 ]
         ],
         [
-                title        : 'Combine Python Load test: 2GB 100 byte records',
-                itClass      : 'apache_beam.testing.load_tests.combine_test:CombineTest.testCombineGlobally',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                sdk          : CommonTestProperties.SDK.PYTHON,
-                jobProperties: [
-                        job_name             : 'load-tests-python-dataflow-batch-combine-2-' + now,
-                        project              : 'apache-beam-testing',
-                        temp_location        : 'gs://temp-storage-for-perf-tests/smoketests',
-                        publish_to_big_query : true,
-                        metrics_dataset      : datasetName,
-                        metrics_table        : 'python_dataflow_batch_combine_2',
-                        input_options        : '\'{' +
-                                '"num_records": 20000000,' +
-                                '"key_size": 10,' +
-                                '"value_size": 90}\'',
-                        max_num_workers      : 5,
-                        num_workers          : 5,
-                        autoscaling_algorithm: "NONE",
-                        top_count            : 20,
-                ]
-        ],
-        [
-                title        : 'Combine Python Load test: 2GB 100 kilobyte records',
-                itClass      : 'apache_beam.testing.load_tests.combine_test:CombineTest.testCombineGlobally',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                sdk          : CommonTestProperties.SDK.PYTHON,
-                jobProperties: [
-                        job_name             : 'load-tests-python-dataflow-batch-combine-3-' + now,
-                        project              : 'apache-beam-testing',
-                        temp_location        : 'gs://temp-storage-for-perf-tests/smoketests',
-                        publish_to_big_query : true,
-                        metrics_dataset      : datasetName,
-                        metrics_table        : 'python_dataflow_batch_combine_3',
-                        input_options        : '\'{' +
-                                '"num_records": 2000,' +
-                                '"key_size": 100000,' +
-                                '"value_size": 90}\'',
-                        max_num_workers      : 5,
-                        num_workers          : 5,
-                        autoscaling_algorithm: "NONE",
-                        top_count            : 20,
-                ]
-        ],
-        [
-                title        : 'Combine Python Load test: 2GB Fanout 4',
-                itClass      : 'apache_beam.testing.load_tests.combine_test:CombineTest.testCombineGlobally',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                sdk          : CommonTestProperties.SDK.PYTHON,
-                jobProperties: [
+                title          : 'Combine Python Load test: 2GB Fanout 4',
+                test           : 'apache_beam.testing.load_tests.combine_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         job_name             : 'load-tests-python-dataflow-batch-combine-4-' + now,
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         temp_location        : 'gs://temp-storage-for-perf-tests/smoketests',
                         publish_to_big_query : true,
                         metrics_dataset      : datasetName,
@@ -105,7 +60,6 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_records": 5000000,' +
                                 '"key_size": 10,' +
                                 '"value_size": 90}\'',
-                        max_num_workers      : 16,
                         num_workers          : 16,
                         autoscaling_algorithm: "NONE",
                         fanout               : 4,
@@ -113,13 +67,13 @@ def loadTestConfigurations = { datasetName -> [
                 ]
         ],
         [
-                title        : 'Combine Python Load test: 2GB Fanout 8',
-                itClass      : 'apache_beam.testing.load_tests.combine_test:CombineTest.testCombineGlobally',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                sdk          : CommonTestProperties.SDK.PYTHON,
-                jobProperties: [
+                title          : 'Combine Python Load test: 2GB Fanout 8',
+                test           : 'apache_beam.testing.load_tests.combine_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         job_name             : 'load-tests-python-dataflow-batch-combine-5-' + now,
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         temp_location        : 'gs://temp-storage-for-perf-tests/smoketests',
                         publish_to_big_query : true,
                         metrics_dataset      : datasetName,
@@ -128,7 +82,6 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_records": 2500000,' +
                                 '"key_size": 10,' +
                                 '"value_size": 90}\'',
-                        max_num_workers      : 16,
                         num_workers          : 16,
                         autoscaling_algorithm: "NONE",
                         fanout               : 8,
@@ -143,7 +96,7 @@ def batchLoadTestJob = { scope, triggeringContext ->
 
     def datasetName = loadTestsBuilder.getBigQueryDataset('load_test', triggeringContext)
     for (testConfiguration in loadTestConfigurations(datasetName)) {
-        loadTestsBuilder.loadTest(scope, testConfiguration.title, testConfiguration.runner, CommonTestProperties.SDK.PYTHON, testConfiguration.jobProperties, testConfiguration.itClass)
+        loadTestsBuilder.loadTest(scope, testConfiguration.title, testConfiguration.runner, CommonTestProperties.SDK.PYTHON_37, testConfiguration.pipelineOptions, testConfiguration.test)
     }
 }
 

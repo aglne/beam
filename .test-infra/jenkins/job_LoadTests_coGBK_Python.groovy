@@ -26,11 +26,12 @@ def now = new Date().format("MMddHHmmss", TimeZone.getTimeZone('UTC'))
 
 def loadTestConfigurations = { datasetName -> [
         [
-                title        : 'CoGroupByKey Python Load test: 2GB of 100B records with a single key',
-                itClass      : 'apache_beam.testing.load_tests.co_group_by_key_test:CoGroupByKeyTest.testCoGroupByKey',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                jobProperties: [
+                title          : 'CoGroupByKey Python Load test: 2GB of 100B records with a single key',
+                test           : 'apache_beam.testing.load_tests.co_group_by_key_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         job_name             : 'load-tests-python-dataflow-batch-cogbk-1-' + now,
                         temp_location        : 'gs://temp-storage-for-perf-tests/loadtests',
                         publish_to_big_query : true,
@@ -49,17 +50,17 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_hot_keys": 1,' +
                                 '"hot_key_fraction": 1}\'',
                         iterations           : 1,
-                        max_num_workers      : 5,
                         num_workers          : 5,
                         autoscaling_algorithm: 'NONE'
                 ]
         ],
         [
-                title        : 'CoGroupByKey Python Load test: 2GB of 100B records with multiple keys',
-                itClass      : 'apache_beam.testing.load_tests.co_group_by_key_test:CoGroupByKeyTest.testCoGroupByKey',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                jobProperties: [
+                title          : 'CoGroupByKey Python Load test: 2GB of 100B records with multiple keys',
+                test           : 'apache_beam.testing.load_tests.co_group_by_key_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         job_name             : 'load-tests-python-dataflow-batch-cogbk-2-' + now,
                         temp_location        : 'gs://temp-storage-for-perf-tests/loadtests',
                         publish_to_big_query : true,
@@ -78,17 +79,17 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_hot_keys": 5,' +
                                 '"hot_key_fraction": 1}\'',
                         iterations           : 1,
-                        max_num_workers      : 5,
                         num_workers          : 5,
                         autoscaling_algorithm: 'NONE'
                 ]
         ],
         [
-                title        : 'CoGroupByKey Python Load test: reiterate 4 times 10kB values',
-                itClass      : 'apache_beam.testing.load_tests.co_group_by_key_test:CoGroupByKeyTest.testCoGroupByKey',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                jobProperties: [
+                title          : 'CoGroupByKey Python Load test: reiterate 4 times 10kB values',
+                test           : 'apache_beam.testing.load_tests.co_group_by_key_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         job_name             : 'load-tests-python-dataflow-batch-cogbk-3-' + now,
                         temp_location        : 'gs://temp-storage-for-perf-tests/loadtests',
                         publish_to_big_query : true,
@@ -107,17 +108,17 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_hot_keys": 200000,' +
                                 '"hot_key_fraction": 1}\'',
                         iterations           : 4,
-                        max_num_workers      : 5,
                         num_workers          : 5,
                         autoscaling_algorithm: 'NONE'
                 ]
         ],
         [
-                title        : 'CoGroupByKey Python Load test: reiterate 4 times 2MB values',
-                itClass      : 'apache_beam.testing.load_tests.co_group_by_key_test:CoGroupByKeyTest.testCoGroupByKey',
-                runner       : CommonTestProperties.Runner.DATAFLOW,
-                jobProperties: [
+                title          : 'CoGroupByKey Python Load test: reiterate 4 times 2MB values',
+                test           : 'apache_beam.testing.load_tests.co_group_by_key_test',
+                runner         : CommonTestProperties.Runner.DATAFLOW,
+                pipelineOptions: [
                         project              : 'apache-beam-testing',
+                        region               : 'us-central1',
                         job_name             : 'load-tests-python-dataflow-batch-cogbk-4-' + now,
                         temp_location        : 'gs://temp-storage-for-perf-tests/loadtests',
                         publish_to_big_query : true,
@@ -136,7 +137,6 @@ def loadTestConfigurations = { datasetName -> [
                                 '"num_hot_keys": 1000,' +
                                 '"hot_key_fraction": 1}\'',
                         iterations           : 4,
-                        max_num_workers      : 5,
                         num_workers          : 5,
                         autoscaling_algorithm: 'NONE'
                 ]
@@ -149,7 +149,7 @@ def batchLoadTestJob = { scope, triggeringContext ->
 
     def datasetName = loadTestsBuilder.getBigQueryDataset('load_test', triggeringContext)
     for (testConfiguration in loadTestConfigurations(datasetName)) {
-        loadTestsBuilder.loadTest(scope, testConfiguration.title, testConfiguration.runner, CommonTestProperties.SDK.PYTHON, testConfiguration.jobProperties, testConfiguration.itClass)
+        loadTestsBuilder.loadTest(scope, testConfiguration.title, testConfiguration.runner, CommonTestProperties.SDK.PYTHON_37, testConfiguration.pipelineOptions, testConfiguration.test)
     }
 }
 

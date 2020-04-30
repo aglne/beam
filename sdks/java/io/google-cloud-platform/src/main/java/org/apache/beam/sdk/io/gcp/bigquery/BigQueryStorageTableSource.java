@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
@@ -39,7 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** A {@link org.apache.beam.sdk.io.Source} representing reading from a table. */
-@Experimental(Experimental.Kind.SOURCE_SINK)
+@Experimental(Kind.SOURCE_SINK)
 public class BigQueryStorageTableSource<T> extends BigQueryStorageSourceBase<T> {
 
   private static final Logger LOG = LoggerFactory.getLogger(BigQueryStorageTableSource.class);
@@ -47,11 +48,19 @@ public class BigQueryStorageTableSource<T> extends BigQueryStorageSourceBase<T> 
   public static <T> BigQueryStorageTableSource<T> create(
       ValueProvider<TableReference> tableRefProvider,
       @Nullable TableReadOptions readOptions,
+      @Nullable ValueProvider<List<String>> selectedFields,
+      @Nullable ValueProvider<String> rowRestriction,
       SerializableFunction<SchemaAndRecord, T> parseFn,
       Coder<T> outputCoder,
       BigQueryServices bqServices) {
     return new BigQueryStorageTableSource<>(
-        tableRefProvider, readOptions, parseFn, outputCoder, bqServices);
+        tableRefProvider,
+        readOptions,
+        selectedFields,
+        rowRestriction,
+        parseFn,
+        outputCoder,
+        bqServices);
   }
 
   private final ValueProvider<TableReference> tableReferenceProvider;
@@ -61,10 +70,12 @@ public class BigQueryStorageTableSource<T> extends BigQueryStorageSourceBase<T> 
   private BigQueryStorageTableSource(
       ValueProvider<TableReference> tableRefProvider,
       @Nullable TableReadOptions readOptions,
+      @Nullable ValueProvider<List<String>> selectedFields,
+      @Nullable ValueProvider<String> rowRestriction,
       SerializableFunction<SchemaAndRecord, T> parseFn,
       Coder<T> outputCoder,
       BigQueryServices bqServices) {
-    super(readOptions, parseFn, outputCoder, bqServices);
+    super(readOptions, selectedFields, rowRestriction, parseFn, outputCoder, bqServices);
     this.tableReferenceProvider = checkNotNull(tableRefProvider, "tableRefProvider");
     cachedTable = new AtomicReference<>();
   }
@@ -104,18 +115,10 @@ public class BigQueryStorageTableSource<T> extends BigQueryStorageSourceBase<T> 
             BigQueryOptions.class.getSimpleName());
         tableReference.setProjectId(options.getProject());
       }
-      Table table =
-          bqServices.getDatasetService(options).getTable(tableReference, getSelectedFields());
+      Table table = bqServices.getDatasetService(options).getTable(tableReference);
       cachedTable.compareAndSet(null, table);
     }
 
     return cachedTable.get();
-  }
-
-  private List<String> getSelectedFields() {
-    if (tableReadOptions != null && !tableReadOptions.getSelectedFieldsList().isEmpty()) {
-      return tableReadOptions.getSelectedFieldsList();
-    }
-    return null;
   }
 }

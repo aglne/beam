@@ -37,6 +37,9 @@ BEAM_PYTHON_SDK=$BEAM_PYTHON_SDK_ZIP
 ASC_FILE_NAME=$BEAM_PYTHON_SDK_ZIP".asc"
 SHA512_FILE_NAME=$BEAM_PYTHON_SDK_ZIP".sha512"
 
+# Cleanup Pubsub once script exits
+trap cleanup_pubsub EXIT
+
 
 #######################################
 # Remove temp directory when complete.
@@ -113,10 +116,11 @@ function verify_wordcount_dataflow() {
     --runner DataflowRunner \
     --job_name wordcount \
     --project $PROJECT_ID \
+    --region $REGION_ID \
     --num_workers $NUM_WORKERS \
     --sdk_location $BEAM_PYTHON_SDK
 
-# verify results.
+  # verify results.
   wordcount_output_in_gcs="gs://$BUCKET_NAME/$WORDCOUNT_OUTPUT"
   gcs_pull_result=$(gsutil ls gs://$BUCKET_NAME)
   if [[ $gcs_pull_result != *$wordcount_output_in_gcs* ]]; then
@@ -139,6 +143,7 @@ function verify_wordcount_dataflow() {
 #   None
 #######################################
 function verify_streaming_wordcount_direct() {
+  cleanup_pubsub
   create_pubsub
   print_separator "Running Streaming wordcount example with DirectRunner"
   python -m apache_beam.examples.streaming_wordcount \
@@ -148,12 +153,10 @@ function verify_streaming_wordcount_direct() {
   pid=$!
   sleep 15
 
-# verify result
+  # verify result
   run_pubsub_publish
   verify_steaming_result "DirectRunner" $pid
 
-# Delete the pubsub topics and subscription before running the second job. Will recreate them in the second job.
-  cleanup_pubsub
   kill -9 $pid
   sleep 10
 }
@@ -168,12 +171,14 @@ function verify_streaming_wordcount_direct() {
 #   None
 #######################################
 function verify_streaming_wordcount_dataflow() {
+  cleanup_pubsub
   create_pubsub
   print_separator "Running Streaming wordcount example with DataflowRunner "
   python -m apache_beam.examples.streaming_wordcount \
     --streaming \
     --job_name pyflow-wordstream-candidate \
     --project $PROJECT_ID \
+    --region $REGION_ID \
     --runner DataflowRunner \
     --input_topic projects/$PROJECT_ID/topics/$PUBSUB_TOPIC1 \
     --output_topic projects/$PROJECT_ID/topics/$PUBSUB_TOPIC2 \
@@ -193,7 +198,6 @@ function verify_streaming_wordcount_dataflow() {
 
   kill -9 $pid
   gcloud dataflow jobs cancel $running_job
-  cleanup_pubsub
 }
 
 

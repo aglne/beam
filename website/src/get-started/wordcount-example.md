@@ -171,7 +171,7 @@ input and output data is often represented by the SDK class `PCollection`.
 represent a dataset of virtually any size, including unbounded datasets.
 
 ![The MinimalWordCount pipeline data flow.](
-  {{ "/images/wordcount-pipeline.png" | prepend: site.baseurl }}){: width="800px"}
+  {{ "/images/wordcount-pipeline.svg" | prepend: site.baseurl }}){: width="800px"}
 
 *Figure 1: The MinimalWordCount pipeline data flow.*
 
@@ -207,7 +207,7 @@ The MinimalWordCount pipeline contains five transforms:
     ```java
         .apply("ExtractWords", FlatMapElements
             .into(TypeDescriptors.strings())
-            .via((String word) -> Arrays.asList(word.split("[^\\p{L}]+"))))
+            .via((String line) -> Arrays.asList(line.split("[^\\p{L}]+"))))
     ```
 
     ```py
@@ -374,6 +374,7 @@ $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WordCount \
 ```
 $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WordCount \
      -Dexec.args="--runner=DataflowRunner --gcpTempLocation=gs://YOUR_GCS_BUCKET/tmp \
+                  --project=YOUR_PROJECT --region=GCE_REGION \
                   --inputFile=gs://apache-beam-samples/shakespeare/* --output=gs://YOUR_GCS_BUCKET/counts" \
      -Pdataflow-runner
 ```
@@ -388,6 +389,12 @@ $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WordCount \
 ```
 $ mvn package -Pnemo-runner && java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.WordCount \
      --runner=NemoRunner --inputFile=`pwd`/pom.xml --output=counts
+```
+
+{:.runner-jet}
+```
+$ mvn package -P jet-runner && java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.WordCount \
+     --runner=JetRunner --jetLocalMode=3 --inputFile=`pwd`/pom.xml --output=counts
 ```
 
 To view the full code in Java, see
@@ -431,6 +438,7 @@ python -m apache_beam.examples.wordcount --input gs://dataflow-samples/shakespea
                                          --output gs://YOUR_GCS_BUCKET/counts \
                                          --runner DataflowRunner \
                                          --project YOUR_GCP_PROJECT \
+                                         --region YOUR_GCP_REGION \
                                          --temp_location gs://YOUR_GCS_BUCKET/tmp/
 ```
 
@@ -440,6 +448,11 @@ This runner is not yet available for the Python SDK.
 ```
 
 {:.runner-nemo}
+```
+This runner is not yet available for the Python SDK.
+```
+
+{:.runner-jet}
 ```
 This runner is not yet available for the Python SDK.
 ```
@@ -484,9 +497,10 @@ $ wordcount --input gs://dataflow-samples/shakespeare/kinglear.txt \
             --output gs://<your-gcs-bucket>/counts \
             --runner dataflow \
             --project your-gcp-project \
+            --region your-gcp-region \
             --temp_location gs://<your-gcs-bucket>/tmp/ \
             --staging_location gs://<your-gcs-bucket>/binaries/ \
-            --worker_harness_container_image=apache-docker-beam-snapshots-docker.bintray.io/beam/go:20180515
+            --worker_harness_container_image=apache/beam_go_sdk:latest
 ```
 
 {:.runner-samza-local}
@@ -495,6 +509,11 @@ This runner is not yet available for the Go SDK.
 ```
 
 {:.runner-nemo}
+```
+This runner is not yet available for the Go SDK.
+```
+
+{:.runner-jet}
 ```
 This runner is not yet available for the Go SDK.
 ```
@@ -723,6 +742,7 @@ $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.DebuggingWordC
 ```
 $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.DebuggingWordCount \
    -Dexec.args="--runner=DataflowRunner --gcpTempLocation=gs://<your-gcs-bucket>/tmp \
+                --project=YOUR_PROJECT --region=GCE_REGION \
                 --inputFile=gs://apache-beam-samples/shakespeare/* --output=gs://<your-gcs-bucket>/counts" \
      -Pdataflow-runner
 ```
@@ -737,6 +757,12 @@ $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.DebuggingWordC
 ```
 $ mvn package -Pnemo-runner && java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.DebuggingWordCount \
      --runner=NemoRunner --inputFile=`pwd`/pom.xml --output=counts
+```
+
+{:.runner-jet}
+```
+$ mvn package -P jet-runner && java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.DebuggingWordCount \
+     --runner=JetRunner --jetLocalMode=3 --output=counts
 ```
 
 To view the full code in Java, see
@@ -790,6 +816,11 @@ This runner is not yet available for the Python SDK.
 This runner is not yet available for the Python SDK.
 ```
 
+{:.runner-jet}
+```
+This runner is not yet available for the Python SDK.
+```
+
 To view the full code in Python, see
 **[wordcount_debugging.py](https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/wordcount_debugging.py).**
 
@@ -830,6 +861,7 @@ $ debugging_wordcount --input gs://dataflow-samples/shakespeare/kinglear.txt \
                       --output gs://<your-gcs-bucket>/counts \
                       --runner dataflow \
                       --project your-gcp-project \
+                      --region your-gcp-region \
                       --temp_location gs://<your-gcs-bucket>/tmp/ \
                       --staging_location gs://<your-gcs-bucket>/binaries/ \
                       --worker_harness_container_image=apache-docker-beam-snapshots-docker.bintray.io/beam/go:20180515
@@ -841,6 +873,11 @@ This runner is not yet available for the Go SDK.
 ```
 
 {:.runner-nemo}
+```
+This runner is not yet available for the Go SDK.
+```
+
+{:.runner-jet}
 ```
 This runner is not yet available for the Go SDK.
 ```
@@ -1072,6 +1109,7 @@ $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WindowedWordCo
 ```
 $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WindowedWordCount \
    -Dexec.args="--runner=DataflowRunner --gcpTempLocation=gs://YOUR_GCS_BUCKET/tmp \
+                --project=YOUR_PROJECT --region=GCE_REGION \
                 --inputFile=gs://apache-beam-samples/shakespeare/* --output=gs://YOUR_GCS_BUCKET/counts" \
      -Pdataflow-runner
 ```
@@ -1086,6 +1124,12 @@ $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WindowedWordCo
 ```
 $ mvn package -Pnemo-runner && java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.WindowedWordCount \
      --runner=NemoRunner --inputFile=`pwd`/pom.xml --output=counts
+```
+
+{:.runner-jet}
+```
+$ mvn package -P jet-runner && java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.WindowedWordCount \
+     --runner=JetRunner --jetLocalMode=3 --inputFile=`pwd`/pom.xml --output=counts
 ```
 
 To view the full code in Java, see
@@ -1130,6 +1174,7 @@ python -m apache_beam.examples.windowed_wordcount --input YOUR_INPUT_FILE \
                                          --output_table PROJECT:DATASET.TABLE \
                                          --runner DataflowRunner \
                                          --project YOUR_GCP_PROJECT \
+                                         --region YOUR_GCP_REGION \
                                          --temp_location gs://YOUR_GCS_BUCKET/tmp/
 ```
 
@@ -1139,6 +1184,11 @@ This runner is not yet available for the Python SDK.
 ```
 
 {:.runner-nemo}
+```
+This runner is not yet available for the Python SDK.
+```
+
+{:.runner-jet}
 ```
 This runner is not yet available for the Python SDK.
 ```
@@ -1194,6 +1244,11 @@ This runner is not yet available for the Go SDK.
 ```
 
 {:.runner-nemo}
+```
+This runner is not yet available for the Go SDK.
+```
+
+{:.runner-jet}
 ```
 This runner is not yet available for the Go SDK.
 ```
@@ -1444,6 +1499,7 @@ pip install apache-beam[gcp]
 python -m apache_beam.examples.streaming_wordcount \
   --runner DataflowRunner \
   --project YOUR_GCP_PROJECT \
+  --region YOUR_GCP_REGION \
   --temp_location gs://YOUR_GCS_BUCKET/tmp/ \
   --input_topic "projects/YOUR_PUBSUB_PROJECT_NAME/topics/YOUR_INPUT_TOPIC" \
   --output_topic "projects/YOUR_PUBSUB_PROJECT_NAME/topics/YOUR_OUTPUT_TOPIC" \
@@ -1456,6 +1512,11 @@ This runner is not yet available for the Python SDK.
 ```
 
 {:.runner-nemo}
+```
+This runner is not yet available for the Python SDK.
+```
+
+{:.runner-jet}
 ```
 This runner is not yet available for the Python SDK.
 ```

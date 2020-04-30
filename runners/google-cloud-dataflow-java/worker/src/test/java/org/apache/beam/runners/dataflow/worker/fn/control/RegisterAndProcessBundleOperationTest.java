@@ -19,8 +19,6 @@ package org.apache.beam.runners.dataflow.worker.fn.control;
 
 import static org.apache.beam.runners.dataflow.worker.fn.control.RegisterAndProcessBundleOperation.encodeAndConcat;
 import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
@@ -49,6 +47,7 @@ import org.apache.beam.model.fnexecution.v1.BeamFnApi;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.InstructionRequest;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.InstructionRequest.RequestCase;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.InstructionResponse;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi.ProcessBundleDescriptor;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.ProcessBundleProgressResponse;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.StateAppendRequest;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.StateClearRequest;
@@ -80,7 +79,7 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.ValueInSingleWindow.Coder;
-import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableTable;
@@ -157,16 +156,13 @@ public class RegisterAndProcessBundleOperationTest {
   public void testSupportsRestart() {
     new RegisterAndProcessBundleOperation(
             IdGenerators.decrementingLongs(),
-            new InstructionRequestHandler() {
+            new TestInstructionRequestHandler() {
               @Override
               public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
                 CompletableFuture<InstructionResponse> responseFuture = new CompletableFuture<>();
                 completeFuture(request, responseFuture);
                 return responseFuture;
               }
-
-              @Override
-              public void close() {}
             },
             mockBeamFnStateDelegator,
             REGISTER_REQUEST,
@@ -186,29 +182,19 @@ public class RegisterAndProcessBundleOperationTest {
     RegisterAndProcessBundleOperation operation =
         new RegisterAndProcessBundleOperation(
             idGenerator,
-            new InstructionRequestHandler() {
+            new TestInstructionRequestHandler() {
               @Override
               public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
                 requests.add(request);
                 switch (request.getRequestCase()) {
                   case REGISTER:
-                    return CompletableFuture.completedFuture(
-                        responseFor(request)
-                            .setRegister(BeamFnApi.RegisterResponse.getDefaultInstance())
-                            .build());
                   case PROCESS_BUNDLE:
-                    return CompletableFuture.completedFuture(
-                        responseFor(request)
-                            .setProcessBundle(BeamFnApi.ProcessBundleResponse.getDefaultInstance())
-                            .build());
+                    return CompletableFuture.completedFuture(responseFor(request).build());
                   default:
                     // block forever on other requests
                     return new CompletableFuture<>();
                 }
               }
-
-              @Override
-              public void close() {}
             },
             mockBeamFnStateDelegator,
             REGISTER_REQUEST,
@@ -233,8 +219,7 @@ public class RegisterAndProcessBundleOperationTest {
         BeamFnApi.InstructionRequest.newBuilder()
             .setInstructionId("778")
             .setProcessBundle(
-                BeamFnApi.ProcessBundleRequest.newBuilder()
-                    .setProcessBundleDescriptorReference("555"))
+                BeamFnApi.ProcessBundleRequest.newBuilder().setProcessBundleDescriptorId("555"))
             .build());
     operation.finish();
 
@@ -245,206 +230,9 @@ public class RegisterAndProcessBundleOperationTest {
         BeamFnApi.InstructionRequest.newBuilder()
             .setInstructionId("779")
             .setProcessBundle(
-                BeamFnApi.ProcessBundleRequest.newBuilder()
-                    .setProcessBundleDescriptorReference("555"))
+                BeamFnApi.ProcessBundleRequest.newBuilder().setProcessBundleDescriptorId("555"))
             .build());
     operation.finish();
-  }
-
-  @Test
-  public void testTentativeUserMetrics() throws Exception {
-    IdGenerator idGenerator = makeIdGeneratorStartingFrom(777L);
-
-    CountDownLatch processBundleLatch = new CountDownLatch(1);
-
-    final String stepName = "fakeStepNameWithUserMetrics";
-    final String namespace = "sdk/whatever";
-    final String name = "someCounter";
-    final long counterValue = 42;
-
-    final BeamFnApi.Metrics.User.MetricName metricName =
-        BeamFnApi.Metrics.User.MetricName.newBuilder()
-            .setNamespace(namespace)
-            .setName(name)
-            .build();
-
-    InstructionRequestHandler instructionRequestHandler =
-        new InstructionRequestHandler() {
-          @Override
-          public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
-            switch (request.getRequestCase()) {
-              case REGISTER:
-                return CompletableFuture.completedFuture(responseFor(request).build());
-              case PROCESS_BUNDLE:
-                return MoreFutures.supplyAsync(
-                    () -> {
-                      processBundleLatch.await();
-                      return responseFor(request)
-                          .setProcessBundle(BeamFnApi.ProcessBundleResponse.getDefaultInstance())
-                          .build();
-                    });
-              case PROCESS_BUNDLE_PROGRESS:
-                return CompletableFuture.completedFuture(
-                    responseFor(request)
-                        .setProcessBundleProgress(
-                            BeamFnApi.ProcessBundleProgressResponse.newBuilder()
-                                .setMetrics(
-                                    BeamFnApi.Metrics.newBuilder()
-                                        .putPtransforms(
-                                            stepName,
-                                            BeamFnApi.Metrics.PTransform.newBuilder()
-                                                .addUser(
-                                                    BeamFnApi.Metrics.User.newBuilder()
-                                                        .setMetricName(metricName)
-                                                        .setCounterData(
-                                                            BeamFnApi.Metrics.User.CounterData
-                                                                .newBuilder()
-                                                                .setValue(counterValue)))
-                                                .build())))
-                        .build());
-              default:
-                // block forever
-                return new CompletableFuture<>();
-            }
-          }
-
-          @Override
-          public void close() {}
-        };
-
-    RegisterAndProcessBundleOperation operation =
-        new RegisterAndProcessBundleOperation(
-            idGenerator,
-            instructionRequestHandler,
-            mockBeamFnStateDelegator,
-            REGISTER_REQUEST,
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            ImmutableTable.of(),
-            ImmutableMap.of(),
-            mockContext);
-
-    operation.start();
-
-    BeamFnApi.Metrics metrics = MoreFutures.get(operation.getProcessBundleProgress()).getMetrics();
-    assertThat(metrics.getPtransformsOrThrow(stepName).getUserCount(), equalTo(1));
-
-    BeamFnApi.Metrics.User userMetric = metrics.getPtransformsOrThrow(stepName).getUser(0);
-    assertThat(userMetric.getMetricName(), equalTo(metricName));
-    assertThat(userMetric.getCounterData().getValue(), equalTo(counterValue));
-
-    processBundleLatch.countDown();
-    operation.finish();
-  }
-
-  @Test
-  public void testFinalUserMetrics() throws Exception {
-    List<BeamFnApi.InstructionRequest> requests = new ArrayList<>();
-    IdGenerator idGenerator = makeIdGeneratorStartingFrom(777L);
-    ExecutorService executorService = Executors.newCachedThreadPool();
-
-    CountDownLatch processBundleLatch = new CountDownLatch(1);
-
-    final String stepName = "fakeStepNameWithUserMetrics";
-    final String namespace = "sdk/whatever";
-    final String name = "someCounter";
-    final long counterValue = 42;
-    final long finalCounterValue = 77;
-
-    final BeamFnApi.Metrics.User.MetricName metricName =
-        BeamFnApi.Metrics.User.MetricName.newBuilder()
-            .setNamespace(namespace)
-            .setName(name)
-            .build();
-
-    InstructionRequestHandler instructionRequestHandler =
-        new InstructionRequestHandler() {
-          @Override
-          public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
-            switch (request.getRequestCase()) {
-              case REGISTER:
-                return CompletableFuture.completedFuture(responseFor(request).build());
-              case PROCESS_BUNDLE:
-                return MoreFutures.supplyAsync(
-                    () -> {
-                      processBundleLatch.await();
-                      return responseFor(request)
-                          .setProcessBundle(
-                              BeamFnApi.ProcessBundleResponse.newBuilder()
-                                  .setMetrics(
-                                      BeamFnApi.Metrics.newBuilder()
-                                          .putPtransforms(
-                                              stepName,
-                                              BeamFnApi.Metrics.PTransform.newBuilder()
-                                                  .addUser(
-                                                      BeamFnApi.Metrics.User.newBuilder()
-                                                          .setMetricName(metricName)
-                                                          .setCounterData(
-                                                              BeamFnApi.Metrics.User.CounterData
-                                                                  .newBuilder()
-                                                                  .setValue(finalCounterValue)))
-                                                  .build())))
-                          .build();
-                    });
-              case PROCESS_BUNDLE_PROGRESS:
-                return CompletableFuture.completedFuture(
-                    responseFor(request)
-                        .setProcessBundleProgress(
-                            BeamFnApi.ProcessBundleProgressResponse.newBuilder()
-                                .setMetrics(
-                                    BeamFnApi.Metrics.newBuilder()
-                                        .putPtransforms(
-                                            stepName,
-                                            BeamFnApi.Metrics.PTransform.newBuilder()
-                                                .addUser(
-                                                    BeamFnApi.Metrics.User.newBuilder()
-                                                        .setMetricName(metricName)
-                                                        .setCounterData(
-                                                            BeamFnApi.Metrics.User.CounterData
-                                                                .newBuilder()
-                                                                .setValue(counterValue)))
-                                                .build())))
-                        .build());
-              default:
-                // block forever
-                return new CompletableFuture<>();
-            }
-          }
-
-          @Override
-          public void close() {}
-        };
-
-    RegisterAndProcessBundleOperation operation =
-        new RegisterAndProcessBundleOperation(
-            idGenerator,
-            instructionRequestHandler,
-            mockBeamFnStateDelegator,
-            REGISTER_REQUEST,
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            ImmutableMap.of(),
-            ImmutableTable.of(),
-            ImmutableMap.of(),
-            mockContext);
-
-    operation.start();
-
-    // Force some intermediate metrics to test crosstalk is not introduced
-    BeamFnApi.Metrics metrics = MoreFutures.get(operation.getProcessBundleProgress()).getMetrics();
-    BeamFnApi.Metrics.User userMetric = metrics.getPtransformsOrThrow(stepName).getUser(0);
-    assertThat(userMetric.getMetricName(), equalTo(metricName));
-    assertThat(userMetric.getCounterData().getValue(), not(equalTo(finalCounterValue)));
-
-    processBundleLatch.countDown();
-    operation.finish();
-
-    metrics = MoreFutures.get(operation.getFinalMetrics());
-
-    userMetric = metrics.getPtransformsOrThrow(stepName).getUser(0);
-    assertThat(userMetric.getMetricName(), equalTo(metricName));
-    assertThat(userMetric.getCounterData().getValue(), equalTo(finalCounterValue));
   }
 
   @Test
@@ -455,16 +243,13 @@ public class RegisterAndProcessBundleOperationTest {
     RegisterAndProcessBundleOperation operation =
         new RegisterAndProcessBundleOperation(
             idGenerator,
-            new InstructionRequestHandler() {
+            new TestInstructionRequestHandler() {
               @Override
               public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
                 requests.add(request);
                 switch (request.getRequestCase()) {
                   case REGISTER:
-                    return CompletableFuture.completedFuture(
-                        InstructionResponse.newBuilder()
-                            .setInstructionId(request.getInstructionId())
-                            .build());
+                    return CompletableFuture.completedFuture(responseFor(request).build());
                   case PROCESS_BUNDLE:
                     CompletableFuture<InstructionResponse> responseFuture =
                         new CompletableFuture<>();
@@ -472,12 +257,7 @@ public class RegisterAndProcessBundleOperationTest {
                         () -> {
                           // Purposefully sleep simulating SDK harness doing work
                           Thread.sleep(100);
-                          responseFuture.complete(
-                              InstructionResponse.newBuilder()
-                                  .setInstructionId(request.getInstructionId())
-                                  .setProcessBundle(
-                                      BeamFnApi.ProcessBundleResponse.getDefaultInstance())
-                                  .build());
+                          responseFuture.complete(responseFor(request).build());
                           completeFuture(request, responseFuture);
                           return null;
                         });
@@ -487,9 +267,6 @@ public class RegisterAndProcessBundleOperationTest {
                     return new CompletableFuture<>();
                 }
               }
-
-              @Override
-              public void close() {}
             },
             mockBeamFnStateDelegator,
             REGISTER_REQUEST,
@@ -516,8 +293,7 @@ public class RegisterAndProcessBundleOperationTest {
         BeamFnApi.InstructionRequest.newBuilder()
             .setInstructionId("778")
             .setProcessBundle(
-                BeamFnApi.ProcessBundleRequest.newBuilder()
-                    .setProcessBundleDescriptorReference("555"))
+                BeamFnApi.ProcessBundleRequest.newBuilder().setProcessBundleDescriptorId("555"))
             .build());
   }
 
@@ -534,7 +310,7 @@ public class RegisterAndProcessBundleOperationTest {
     when(mockUserStepContext.stateInternals()).thenReturn(stateInternals);
 
     InstructionRequestHandler instructionRequestHandler =
-        new InstructionRequestHandler() {
+        new TestInstructionRequestHandler() {
           @Override
           public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
             switch (request.getRequestCase()) {
@@ -549,7 +325,7 @@ public class RegisterAndProcessBundleOperationTest {
                                   StateKey.newBuilder()
                                       .setBagUserState(
                                           StateKey.BagUserState.newBuilder()
-                                              .setPtransformId("testPTransformId")
+                                              .setTransformId("testPTransformId")
                                               .setWindow(ByteString.EMPTY)
                                               .setUserStateId("testUserStateId")))
                               .buildPartial();
@@ -594,18 +370,13 @@ public class RegisterAndProcessBundleOperationTest {
                           MoreFutures.get(stateHandler.handle(clear));
                       assertNotNull(clearResponse);
 
-                      return responseFor(request)
-                          .setProcessBundle(BeamFnApi.ProcessBundleResponse.getDefaultInstance())
-                          .build();
+                      return responseFor(request).build();
                     });
               default:
                 // block forever
                 return new CompletableFuture<>();
             }
           }
-
-          @Override
-          public void close() {}
         };
 
     RegisterAndProcessBundleOperation operation =
@@ -644,7 +415,7 @@ public class RegisterAndProcessBundleOperationTest {
     CountDownLatch waitForStateHandler = new CountDownLatch(1);
     // Issues state calls to the Runner after a process bundle request is sent.
     InstructionRequestHandler fakeClient =
-        new InstructionRequestHandler() {
+        new TestInstructionRequestHandler() {
           @Override
           public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
             switch (request.getRequestCase()) {
@@ -657,7 +428,7 @@ public class RegisterAndProcessBundleOperationTest {
                           StateKey.newBuilder()
                               .setMultimapSideInput(
                                   StateKey.MultimapSideInput.newBuilder()
-                                      .setPtransformId("testPTransformId")
+                                      .setTransformId("testPTransformId")
                                       .setSideInputId("testSideInputId")
                                       .setWindow(
                                           ByteString.copyFrom(
@@ -688,18 +459,13 @@ public class RegisterAndProcessBundleOperationTest {
                           encodeAndConcat(Arrays.asList("X", "Y", "Z"), StringUtf8Coder.of()),
                           getResponse.getGet().getData());
 
-                      return responseFor(request)
-                          .setProcessBundle(BeamFnApi.ProcessBundleResponse.getDefaultInstance())
-                          .build();
+                      return responseFor(request).build();
                     });
               default:
                 // block forever on other request types
                 return new CompletableFuture<>();
             }
           }
-
-          @Override
-          public void close() {}
         };
 
     SideInputReader fakeSideInputReader =
@@ -771,7 +537,7 @@ public class RegisterAndProcessBundleOperationTest {
     RegisterAndProcessBundleOperation operation =
         new RegisterAndProcessBundleOperation(
             idGenerator,
-            new InstructionRequestHandler() {
+            new TestInstructionRequestHandler() {
               @Override
               public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
                 CompletableFuture<InstructionResponse> responseFuture = new CompletableFuture<>();
@@ -788,9 +554,6 @@ public class RegisterAndProcessBundleOperationTest {
                 }
                 return responseFuture;
               }
-
-              @Override
-              public void close() {}
             },
             mockBeamFnStateDelegator,
             REGISTER_REQUEST,
@@ -819,7 +582,7 @@ public class RegisterAndProcessBundleOperationTest {
     RegisterAndProcessBundleOperation operation =
         new RegisterAndProcessBundleOperation(
             idGenerator,
-            new InstructionRequestHandler() {
+            new TestInstructionRequestHandler() {
               @Override
               public CompletionStage<InstructionResponse> handle(InstructionRequest request) {
                 CompletableFuture<InstructionResponse> responseFuture = new CompletableFuture<>();
@@ -836,9 +599,6 @@ public class RegisterAndProcessBundleOperationTest {
                 }
                 return responseFuture;
               }
-
-              @Override
-              public void close() {}
             },
             mockBeamFnStateDelegator,
             REGISTER_REQUEST,
@@ -858,15 +618,26 @@ public class RegisterAndProcessBundleOperationTest {
   }
 
   private InstructionResponse.Builder responseFor(BeamFnApi.InstructionRequest request) {
-    return BeamFnApi.InstructionResponse.newBuilder().setInstructionId(request.getInstructionId());
+    BeamFnApi.InstructionResponse.Builder response =
+        BeamFnApi.InstructionResponse.newBuilder().setInstructionId(request.getInstructionId());
+    if (request.hasRegister()) {
+      response.setRegister(BeamFnApi.RegisterResponse.getDefaultInstance());
+    } else if (request.hasProcessBundle()) {
+      response.setProcessBundle(BeamFnApi.ProcessBundleResponse.getDefaultInstance());
+    } else if (request.hasFinalizeBundle()) {
+      response.setFinalizeBundle(BeamFnApi.FinalizeBundleResponse.getDefaultInstance());
+    } else if (request.hasProcessBundleProgress()) {
+      response.setProcessBundleProgress(
+          BeamFnApi.ProcessBundleProgressResponse.getDefaultInstance());
+    } else if (request.hasProcessBundleSplit()) {
+      response.setProcessBundleSplit(BeamFnApi.ProcessBundleSplitResponse.getDefaultInstance());
+    }
+    return response;
   }
 
   private void completeFuture(
       BeamFnApi.InstructionRequest request, CompletableFuture<InstructionResponse> response) {
-    response.complete(
-        BeamFnApi.InstructionResponse.newBuilder()
-            .setInstructionId(request.getInstructionId())
-            .build());
+    response.complete(responseFor(request).build());
   }
 
   @Test
@@ -923,5 +694,13 @@ public class RegisterAndProcessBundleOperationTest {
         MoreFutures.get(operation.getProcessBundleProgress());
 
     assertSame("Return value from mockInstructionRequestHandler", expectedResult, result);
+  }
+
+  private abstract static class TestInstructionRequestHandler implements InstructionRequestHandler {
+    @Override
+    public void registerProcessBundleDescriptor(ProcessBundleDescriptor descriptor) {}
+
+    @Override
+    public void close() {}
   }
 }

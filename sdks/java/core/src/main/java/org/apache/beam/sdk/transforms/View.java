@@ -32,6 +32,7 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PCollectionViews;
+import org.apache.beam.sdk.values.PCollectionViews.TypeDescriptorSupplier;
 
 /**
  * Transforms for creating {@link PCollectionView PCollectionViews} from {@link PCollection
@@ -43,7 +44,7 @@ import org.apache.beam.sdk.values.PCollectionViews;
  * ViewT}. The transforms here represent ways of converting the {@code ElemT} values in a window
  * into a {@code ViewT} for that window.
  *
- * <p>When a {@link ParDo} tranform is processing a main input element in a window {@code w} and a
+ * <p>When a {@link ParDo} transform is processing a main input element in a window {@code w} and a
  * {@link PCollectionView} is read via {@link DoFn.ProcessContext#sideInput}, the value of the view
  * for {@code w} is returned.
  *
@@ -233,9 +234,12 @@ public class View {
 
       PCollection<KV<Void, T>> materializationInput =
           input.apply(new VoidKeyToMultimapMaterialization<>());
+      Coder<T> inputCoder = input.getCoder();
       PCollectionView<List<T>> view =
           PCollectionViews.listView(
-              materializationInput, materializationInput.getWindowingStrategy());
+              materializationInput,
+              (TypeDescriptorSupplier<T>) inputCoder::getEncodedTypeDescriptor,
+              materializationInput.getWindowingStrategy());
       materializationInput.apply(CreatePCollectionView.of(view));
       return view;
     }
@@ -263,9 +267,12 @@ public class View {
 
       PCollection<KV<Void, T>> materializationInput =
           input.apply(new VoidKeyToMultimapMaterialization<>());
+      Coder<T> inputCoder = input.getCoder();
       PCollectionView<Iterable<T>> view =
           PCollectionViews.iterableView(
-              materializationInput, materializationInput.getWindowingStrategy());
+              materializationInput,
+              (TypeDescriptorSupplier<T>) inputCoder::getEncodedTypeDescriptor,
+              materializationInput.getWindowingStrategy());
       materializationInput.apply(CreatePCollectionView.of(view));
       return view;
     }
@@ -402,11 +409,17 @@ public class View {
         throw new IllegalStateException("Unable to create a side-input view from input", e);
       }
 
+      KvCoder<K, V> kvCoder = (KvCoder<K, V>) input.getCoder();
+      Coder<K> keyCoder = kvCoder.getKeyCoder();
+      Coder<V> valueCoder = kvCoder.getValueCoder();
       PCollection<KV<Void, KV<K, V>>> materializationInput =
           input.apply(new VoidKeyToMultimapMaterialization<>());
       PCollectionView<Map<K, Iterable<V>>> view =
           PCollectionViews.multimapView(
-              materializationInput, materializationInput.getWindowingStrategy());
+              materializationInput,
+              (TypeDescriptorSupplier<K>) keyCoder::getEncodedTypeDescriptor,
+              (TypeDescriptorSupplier<V>) valueCoder::getEncodedTypeDescriptor,
+              materializationInput.getWindowingStrategy());
       materializationInput.apply(CreatePCollectionView.of(view));
       return view;
     }
@@ -438,11 +451,18 @@ public class View {
         throw new IllegalStateException("Unable to create a side-input view from input", e);
       }
 
+      KvCoder<K, V> kvCoder = (KvCoder<K, V>) input.getCoder();
+      Coder<K> keyCoder = kvCoder.getKeyCoder();
+      Coder<V> valueCoder = kvCoder.getValueCoder();
+
       PCollection<KV<Void, KV<K, V>>> materializationInput =
           input.apply(new VoidKeyToMultimapMaterialization<>());
       PCollectionView<Map<K, V>> view =
           PCollectionViews.mapView(
-              materializationInput, materializationInput.getWindowingStrategy());
+              materializationInput,
+              (TypeDescriptorSupplier<K>) keyCoder::getEncodedTypeDescriptor,
+              (TypeDescriptorSupplier<V>) valueCoder::getEncodedTypeDescriptor,
+              materializationInput.getWindowingStrategy());
       materializationInput.apply(CreatePCollectionView.of(view));
       return view;
     }

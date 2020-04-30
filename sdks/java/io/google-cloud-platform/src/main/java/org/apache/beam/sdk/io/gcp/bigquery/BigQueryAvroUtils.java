@@ -36,6 +36,8 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatterBuilder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import org.apache.avro.Conversions;
 import org.apache.avro.LogicalType;
@@ -65,7 +67,7 @@ class BigQueryAvroUtils {
    * <p>Some BigQuery types are duplicated here since slightly different Avro records are produced
    * when exporting data in Avro format and when reading data directly using the read API.
    */
-  public static final ImmutableMultimap<String, Type> BIG_QUERY_TO_AVRO_TYPES =
+  static final ImmutableMultimap<String, Type> BIG_QUERY_TO_AVRO_TYPES =
       ImmutableMultimap.<String, Type>builder()
           .put("STRING", Type.STRING)
           .put("GEOGRAPHY", Type.STRING)
@@ -163,6 +165,41 @@ class BigQueryAvroUtils {
       formatter = ISO_LOCAL_TIME_FORMATTER_MICROS;
     }
     return LocalTime.ofNanoOfDay(timeMicros * 1000).format(formatter);
+  }
+
+  static TableSchema trimBigQueryTableSchema(TableSchema inputSchema, Schema avroSchema) {
+    List<TableFieldSchema> subSchemas =
+        inputSchema.getFields().stream()
+            .flatMap(fieldSchema -> mapTableFieldSchema(fieldSchema, avroSchema))
+            .collect(Collectors.toList());
+
+    return new TableSchema().setFields(subSchemas);
+  }
+
+  private static Stream<TableFieldSchema> mapTableFieldSchema(
+      TableFieldSchema fieldSchema, Schema avroSchema) {
+    Field avroFieldSchema = avroSchema.getField(fieldSchema.getName());
+    if (avroFieldSchema == null) {
+      return Stream.empty();
+    } else if (avroFieldSchema.schema().getType() != Type.RECORD) {
+      return Stream.of(fieldSchema);
+    }
+
+    List<TableFieldSchema> subSchemas =
+        fieldSchema.getFields().stream()
+            .flatMap(subSchema -> mapTableFieldSchema(subSchema, avroFieldSchema.schema()))
+            .collect(Collectors.toList());
+
+    TableFieldSchema output =
+        new TableFieldSchema()
+            .setCategories(fieldSchema.getCategories())
+            .setDescription(fieldSchema.getDescription())
+            .setFields(subSchemas)
+            .setMode(fieldSchema.getMode())
+            .setName(fieldSchema.getName())
+            .setType(fieldSchema.getType());
+
+    return Stream.of(output);
   }
 
   /**
@@ -360,14 +397,20 @@ class BigQueryAvroUtils {
     }
     return Schema.createRecord(
         schemaName,
-        "org.apache.beam.sdk.io.gcp.bigquery",
         "Translated Avro Schema for " + schemaName,
+        "org.apache.beam.sdk.io.gcp.bigquery",
         false,
         avroFields);
   }
 
   private static Field convertField(TableFieldSchema bigQueryField) {
-    Type avroType = BIG_QUERY_TO_AVRO_TYPES.get(bigQueryField.getType()).iterator().next();
+    ImmutableCollection<Type> avroTypes = BIG_QUERY_TO_AVRO_TYPES.get(bigQueryField.getType());
+    if (avroTypes.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Unable to map BigQuery field type " + bigQueryField.getType() + " to avro type.");
+    }
+
+    Type avroType = avroTypes.iterator().next();
     Schema elementSchema;
     if (avroType == Type.RECORD) {
       elementSchema = toGenericAvroSchema(bigQueryField.getName(), bigQueryField.getFields());

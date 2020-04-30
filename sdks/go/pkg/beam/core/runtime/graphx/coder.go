@@ -32,7 +32,9 @@ const (
 	// Model constants
 
 	urnBytesCoder               = "beam:coder:bytes:v1"
+	urnBoolCoder                = "beam:coder:bool:v1"
 	urnVarIntCoder              = "beam:coder:varint:v1"
+	urnDoubleCoder              = "beam:coder:double:v1"
 	urnLengthPrefixCoder        = "beam:coder:length_prefix:v1"
 	urnKVCoder                  = "beam:coder:kv:v1"
 	urnIterableCoder            = "beam:coder:iterable:v1"
@@ -47,6 +49,22 @@ const (
 	urnCustomCoder = "beam:go:coder:custom:v1"
 	urnCoGBKList   = "beam:go:coder:cogbklist:v1" // CoGBK representation. Not a coder.
 )
+
+func knownStandardCoders() []string {
+	return []string{
+		urnBytesCoder,
+		urnBoolCoder,
+		urnVarIntCoder,
+		urnDoubleCoder,
+		urnLengthPrefixCoder,
+		urnKVCoder,
+		urnIterableCoder,
+		urnStateBackedIterableCoder,
+		urnWindowedValueCoder,
+		urnGlobalWindow,
+		urnIntervalWindow,
+	}
+}
 
 // MarshalCoders marshals a list of coders into model coders.
 func MarshalCoders(coders []*coder.Coder) ([]string, map[string]*pb.Coder) {
@@ -155,8 +173,14 @@ func (b *CoderUnmarshaller) makeCoder(c *pb.Coder) (*coder.Coder, error) {
 	case urnBytesCoder:
 		return coder.NewBytes(), nil
 
+	case urnBoolCoder:
+		return coder.NewBool(), nil
+
 	case urnVarIntCoder:
 		return coder.NewVarInt(), nil
+
+	case urnDoubleCoder:
+		return coder.NewDouble(), nil
 
 	case urnKVCoder:
 		if len(components) != 2 {
@@ -367,8 +391,14 @@ func (b *CoderMarshaller) Add(c *coder.Coder) string {
 		// TODO(herohde) 6/27/2017: add length-prefix and not assume nested by context?
 		return b.internBuiltInCoder(urnBytesCoder)
 
+	case coder.Bool:
+		return b.internBuiltInCoder(urnBoolCoder)
+
 	case coder.VarInt:
 		return b.internBuiltInCoder(urnVarIntCoder)
+
+	case coder.Double:
+		return b.internBuiltInCoder(urnDoubleCoder)
 
 	default:
 		panic(fmt.Sprintf("Failed to marshal custom coder %v, unexpected coder kind: %v", c, c.Kind))

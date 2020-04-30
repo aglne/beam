@@ -60,6 +60,7 @@ import java.util.Random;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.extensions.gcp.util.BackOffAdapter;
 import org.apache.beam.sdk.extensions.gcp.util.Transport;
 import org.apache.beam.sdk.util.FluentBackoff;
@@ -110,6 +111,7 @@ import org.slf4j.LoggerFactory;
  *    client.insertDataToTable(projectId, datasetId, tableName, rows)
  * ]}</pre>
  */
+@Internal
 public class BigqueryClient {
   private static final Logger LOG = LoggerFactory.getLogger(BigqueryClient.class);
   // The maximum number of retries to execute a BigQuery RPC
@@ -164,7 +166,13 @@ public class BigqueryClient {
   @Nonnull
   public QueryResponse queryWithRetries(String query, String projectId)
       throws IOException, InterruptedException {
-    return queryWithRetries(query, projectId, false);
+    return queryWithRetries(query, projectId, false, false);
+  }
+
+  @Nonnull
+  public QueryResponse queryWithRetriesUsingStandardSql(String query, String projectId)
+      throws IOException, InterruptedException {
+    return queryWithRetries(query, projectId, false, true);
   }
 
   @Nullable
@@ -328,10 +336,21 @@ public class BigqueryClient {
   @Nonnull
   public QueryResponse queryWithRetries(String query, String projectId, boolean typed)
       throws IOException, InterruptedException {
+    return queryWithRetries(query, projectId, typed, false);
+  }
+
+  @Nonnull
+  private QueryResponse queryWithRetries(
+      String query, String projectId, boolean typed, boolean useStandardSql)
+      throws IOException, InterruptedException {
     Sleeper sleeper = Sleeper.DEFAULT;
     BackOff backoff = BackOffAdapter.toGcpBackOff(BACKOFF_FACTORY.backoff());
     IOException lastException = null;
-    QueryRequest bqQueryRequest = new QueryRequest().setQuery(query).setTimeoutMs(QUERY_TIMEOUT_MS);
+    QueryRequest bqQueryRequest =
+        new QueryRequest()
+            .setQuery(query)
+            .setTimeoutMs(QUERY_TIMEOUT_MS)
+            .setUseLegacySql(!useStandardSql);
     do {
       if (lastException != null) {
         LOG.warn("Retrying query ({}) after exception", bqQueryRequest.getQuery(), lastException);

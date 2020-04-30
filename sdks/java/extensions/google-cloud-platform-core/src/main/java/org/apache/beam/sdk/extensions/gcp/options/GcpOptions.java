@@ -91,13 +91,51 @@ public interface GcpOptions extends GoogleApiDebugOptions, PipelineOptions {
    * operations.
    *
    * <p>Default is set on a per-service basis.
+   *
+   * @deprecated Use {@link #getWorkerZone()} instead.
    */
+  @Deprecated
   @Description(
       "GCP availability zone for running GCP operations. "
-          + "Default is up to the individual service.")
+          + "and GCE availability zone for launching workers "
+          + "Default is up to the individual service. "
+          + "This option is deprecated, and will be replaced by workerZone.")
   String getZone();
 
+  /** @deprecated Use {@link #setWorkerZone} instead. */
+  @Deprecated
   void setZone(String value);
+
+  /**
+   * The Compute Engine region (https://cloud.google.com/compute/docs/regions-zones/regions-zones)
+   * in which worker processing should occur, e.g. "us-west1". Mutually exclusive with {@link
+   * #getWorkerZone()}. If neither workerRegion nor workerZone is specified, default to same value
+   * as region.
+   */
+  @Description(
+      "The Compute Engine region "
+          + "(https://cloud.google.com/compute/docs/regions-zones/regions-zones) in which worker "
+          + "processing should occur, e.g. \"us-west1\". Mutually exclusive with workerZone. If "
+          + "neither workerRegion nor workerZone is specified, default to same value as region.")
+  String getWorkerRegion();
+
+  void setWorkerRegion(String workerRegion);
+
+  /**
+   * The Compute Engine zone (https://cloud.google.com/compute/docs/regions-zones/regions-zones) in
+   * which worker processing should occur, e.g. "us-west1-a". Mutually exclusive with {@link
+   * #getWorkerRegion()}. If neither workerRegion nor workerZone is specified, the Dataflow service
+   * will choose a zone in region based on available capacity.
+   */
+  @Description(
+      "The Compute Engine zone "
+          + "(https://cloud.google.com/compute/docs/regions-zones/regions-zones) in which worker "
+          + "processing should occur, e.g. \"us-west1-a\". Mutually exclusive with workerRegion. "
+          + "If neither workerRegion nor workerZone is specified, the Dataflow service will choose "
+          + "a zone in region based on available capacity.")
+  String getWorkerZone();
+
+  void setWorkerZone(String workerZone);
 
   /**
    * The class of the credential factory that should be created and used to create credentials. If

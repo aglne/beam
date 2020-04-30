@@ -21,8 +21,10 @@ import static org.apache.beam.runners.spark.translation.TranslationUtils.canAvoi
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import javax.annotation.Nullable;
 import org.apache.beam.runners.core.SystemReduceFn;
@@ -33,7 +35,9 @@ import org.apache.beam.runners.spark.coders.CoderHelpers;
 import org.apache.beam.runners.spark.io.SourceRDD;
 import org.apache.beam.runners.spark.metrics.MetricsAccumulator;
 import org.apache.beam.runners.spark.metrics.MetricsContainerStepMapAccumulator;
+import org.apache.beam.runners.spark.util.ByteArray;
 import org.apache.beam.runners.spark.util.SideInputBroadcast;
+import org.apache.beam.runners.spark.util.SparkCompat;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.IterableCoder;
@@ -62,14 +66,19 @@ import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.AbstractIterator;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.FluentIterable;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterators;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.spark.HashPartitioner;
 import org.apache.spark.Partitioner;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.storage.StorageLevel;
+import scala.Tuple2;
 
 /** Supports translation between a Beam transform, and Spark's operations on RDDs. */
 public final class TransformTranslator {
@@ -321,10 +330,10 @@ public final class TransformTranslator {
                 vaCoder,
                 windowingStrategy);
 
+        JavaPairRDD<K, WindowedValue<OutputT>> kwvs =
+            SparkCompat.extractOutput(accumulatePerKey, sparkCombineFn);
         JavaRDD<WindowedValue<KV<K, OutputT>>> outRdd =
-            accumulatePerKey
-                .flatMapValues(sparkCombineFn::extractOutput)
-                .map(new TranslationUtils.FromPairFunction())
+            kwvs.map(new TranslationUtils.FromPairFunction())
                 .map(new TranslationUtils.ToKVByWindowInValueFunction<>());
 
         context.putDataset(transform, new BoundedDataset<>(outRdd));
@@ -366,6 +375,9 @@ public final class TransformTranslator {
         doFnSchemaInformation =
             ParDoTranslation.getSchemaInformation(context.getCurrentTransform());
 
+        Map<String, PCollectionView<?>> sideInputMapping =
+            ParDoTranslation.getSideInputMapping(context.getCurrentTransform());
+
         MultiDoFnFunction<InputT, OutputT> multiDoFnFunction =
             new MultiDoFnFunction<>(
                 metricsAccum,
@@ -376,10 +388,11 @@ public final class TransformTranslator {
                 transform.getAdditionalOutputTags().getAll(),
                 inputCoder,
                 outputCoders,
-                TranslationUtils.getSideInputs(transform.getSideInputs(), context),
+                TranslationUtils.getSideInputs(transform.getSideInputs().values(), context),
                 windowingStrategy,
                 stateful,
-                doFnSchemaInformation);
+                doFnSchemaInformation,
+                sideInputMapping);
 
         if (stateful) {
           // Based on the fact that the signature is stateful, DoFnSignatures ensures
@@ -390,7 +403,8 @@ public final class TransformTranslator {
                   windowingStrategy.getWindowFn().windowCoder(),
                   (JavaRDD) inRDD,
                   getPartitioner(context),
-                  (MultiDoFnFunction) multiDoFnFunction);
+                  (MultiDoFnFunction) multiDoFnFunction,
+                  signature.processElement().requiresTimeSortedInput());
         } else {
           all = inRDD.mapPartitionsToPair(multiDoFnFunction);
         }
@@ -434,27 +448,159 @@ public final class TransformTranslator {
       Coder<? extends BoundedWindow> windowCoder,
       JavaRDD<WindowedValue<KV<K, V>>> kvInRDD,
       Partitioner partitioner,
-      MultiDoFnFunction<KV<K, V>, OutputT> doFnFunction) {
+      MultiDoFnFunction<KV<K, V>, OutputT> doFnFunction,
+      boolean requiresSortedInput) {
     Coder<K> keyCoder = kvCoder.getKeyCoder();
 
     final WindowedValue.WindowedValueCoder<V> wvCoder =
         WindowedValue.FullWindowedValueCoder.of(kvCoder.getValueCoder(), windowCoder);
 
-    JavaRDD<KV<K, Iterable<WindowedValue<V>>>> groupRDD =
-        GroupCombineFunctions.groupByKeyOnly(kvInRDD, keyCoder, wvCoder, partitioner);
+    if (!requiresSortedInput) {
+      return GroupCombineFunctions.groupByKeyOnly(kvInRDD, keyCoder, wvCoder, partitioner)
+          .map(
+              input -> {
+                final K key = input.getKey();
+                Iterable<WindowedValue<V>> value = input.getValue();
+                return FluentIterable.from(value)
+                    .transform(
+                        windowedValue ->
+                            windowedValue.withValue(KV.of(key, windowedValue.getValue())))
+                    .iterator();
+              })
+          .flatMapToPair(doFnFunction);
+    }
 
-    return groupRDD
-        .map(
-            input -> {
-              final K key = input.getKey();
-              Iterable<WindowedValue<V>> value = input.getValue();
-              return FluentIterable.from(value)
-                  .transform(
-                      windowedValue ->
-                          windowedValue.withValue(KV.of(key, windowedValue.getValue())))
-                  .iterator();
-            })
-        .flatMapToPair(doFnFunction);
+    JavaPairRDD<ByteArray, byte[]> pairRDD =
+        kvInRDD
+            .map(new ReifyTimestampsAndWindowsFunction<>())
+            .mapToPair(TranslationUtils.toPairFunction())
+            .mapToPair(
+                CoderHelpers.toByteFunctionWithTs(keyCoder, wvCoder, in -> in._2().getTimestamp()));
+
+    JavaPairRDD<ByteArray, byte[]> sorted =
+        pairRDD.repartitionAndSortWithinPartitions(keyPrefixPartitionerFrom(partitioner));
+
+    return sorted.mapPartitionsToPair(wrapDoFnFromSortedRDD(doFnFunction, keyCoder, wvCoder));
+  }
+
+  private static Partitioner keyPrefixPartitionerFrom(Partitioner partitioner) {
+    return new Partitioner() {
+      @Override
+      public int numPartitions() {
+        return partitioner.numPartitions();
+      }
+
+      @Override
+      public int getPartition(Object o) {
+        ByteArray b = (ByteArray) o;
+        return partitioner.getPartition(
+            new ByteArray(Arrays.copyOfRange(b.getValue(), 0, b.getValue().length - 8)));
+      }
+    };
+  }
+
+  private static <K, V, OutputT>
+      PairFlatMapFunction<Iterator<Tuple2<ByteArray, byte[]>>, TupleTag<?>, WindowedValue<?>>
+          wrapDoFnFromSortedRDD(
+              MultiDoFnFunction<KV<K, V>, OutputT> doFnFunction,
+              Coder<K> keyCoder,
+              Coder<WindowedValue<V>> wvCoder) {
+
+    return (Iterator<Tuple2<ByteArray, byte[]>> in) -> {
+      Iterator<Iterator<Tuple2<TupleTag<?>, WindowedValue<?>>>> mappedGroups;
+      mappedGroups =
+          Iterators.transform(
+              splitBySameKey(in, keyCoder, wvCoder),
+              group -> {
+                try {
+                  return doFnFunction.call(group);
+                } catch (Exception ex) {
+                  throw new RuntimeException(ex);
+                }
+              });
+      return flatten(mappedGroups);
+    };
+  }
+
+  @VisibleForTesting
+  static <T> Iterator<T> flatten(final Iterator<Iterator<T>> toFlatten) {
+
+    return new AbstractIterator<T>() {
+
+      @Nullable Iterator<T> current = null;
+
+      @Override
+      protected T computeNext() {
+        while (true) {
+          if (current == null) {
+            if (toFlatten.hasNext()) {
+              current = toFlatten.next();
+            } else {
+              return endOfData();
+            }
+          }
+          if (current.hasNext()) {
+            return current.next();
+          }
+          current = null;
+        }
+      }
+    };
+  }
+
+  @VisibleForTesting
+  static <K, V> Iterator<Iterator<WindowedValue<KV<K, V>>>> splitBySameKey(
+      Iterator<Tuple2<ByteArray, byte[]>> in, Coder<K> keyCoder, Coder<WindowedValue<V>> wvCoder) {
+
+    return new AbstractIterator<Iterator<WindowedValue<KV<K, V>>>>() {
+
+      @Nullable Tuple2<ByteArray, byte[]> read = null;
+
+      @Override
+      protected Iterator<WindowedValue<KV<K, V>>> computeNext() {
+        readNext();
+        if (read != null) {
+          byte[] value = read._1().getValue();
+          byte[] keyPart = Arrays.copyOfRange(value, 0, value.length - 8);
+          K key = CoderHelpers.fromByteArray(keyPart, keyCoder);
+          return createIteratorForKey(keyPart, key);
+        }
+        return endOfData();
+      }
+
+      private void readNext() {
+        if (read == null) {
+          if (in.hasNext()) {
+            read = in.next();
+          }
+        }
+      }
+
+      private void consumed() {
+        read = null;
+      }
+
+      private Iterator<WindowedValue<KV<K, V>>> createIteratorForKey(byte[] keyPart, K key) {
+
+        return new AbstractIterator<WindowedValue<KV<K, V>>>() {
+          @Override
+          protected WindowedValue<KV<K, V>> computeNext() {
+            readNext();
+            if (read != null) {
+              byte[] value = read._1().getValue();
+              byte[] prefix = Arrays.copyOfRange(value, 0, value.length - 8);
+              if (Arrays.equals(prefix, keyPart)) {
+                WindowedValue<V> wv = CoderHelpers.fromByteArray(read._2(), wvCoder);
+                consumed();
+                return WindowedValue.of(
+                    KV.of(key, wv.getValue()), wv.getTimestamp(), wv.getWindows(), wv.getPane());
+              }
+            }
+            return endOfData();
+          }
+        };
+      }
+    };
   }
 
   private static <T> TransformEvaluator<Read.Bounded<T>> readBounded() {
@@ -546,12 +692,11 @@ public final class TransformTranslator {
         @SuppressWarnings("unchecked")
         final WindowFn<Object, W> windowFn = (WindowFn<Object, W>) windowingStrategy.getWindowFn();
 
-        final Coder<K> keyCoder = coder.getKeyCoder();
-        final WindowedValue.WindowedValueCoder<V> wvCoder =
-            WindowedValue.FullWindowedValueCoder.of(coder.getValueCoder(), windowFn.windowCoder());
+        final WindowedValue.WindowedValueCoder<KV<K, V>> wvCoder =
+            WindowedValue.FullWindowedValueCoder.of(coder, windowFn.windowCoder());
 
         JavaRDD<WindowedValue<KV<K, V>>> reshuffled =
-            GroupCombineFunctions.reshuffle(inRDD, keyCoder, wvCoder);
+            GroupCombineFunctions.reshuffle(inRDD, wvCoder);
 
         context.putDataset(transform, new BoundedDataset<>(reshuffled));
       }

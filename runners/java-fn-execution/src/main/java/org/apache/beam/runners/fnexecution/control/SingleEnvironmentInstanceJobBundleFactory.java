@@ -23,9 +23,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
+import org.apache.beam.runners.core.construction.Timer;
 import org.apache.beam.runners.core.construction.graph.ExecutableStage;
 import org.apache.beam.runners.fnexecution.GrpcFnServer;
 import org.apache.beam.runners.fnexecution.control.ProcessBundleDescriptors.ExecutableProcessBundleDescriptor;
+import org.apache.beam.runners.fnexecution.control.ProcessBundleDescriptors.TimerSpec;
 import org.apache.beam.runners.fnexecution.data.GrpcDataService;
 import org.apache.beam.runners.fnexecution.environment.EnvironmentFactory;
 import org.apache.beam.runners.fnexecution.environment.RemoteEnvironment;
@@ -34,7 +36,7 @@ import org.apache.beam.runners.fnexecution.state.StateRequestHandler;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.fn.IdGenerator;
 import org.apache.beam.sdk.fn.data.FnDataReceiver;
-import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 
 /**
@@ -150,10 +152,11 @@ public class SingleEnvironmentInstanceJobBundleFactory implements JobBundleFacto
     @Override
     public RemoteBundle getBundle(
         OutputReceiverFactory outputReceiverFactory,
+        TimerReceiverFactory timerReceiverFactory,
         StateRequestHandler stateRequestHandler,
         BundleProgressHandler progressHandler) {
       Map<String, RemoteOutputReceiver<?>> outputReceivers = new HashMap<>();
-      for (Map.Entry<String, Coder<WindowedValue<?>>> remoteOutputCoder :
+      for (Map.Entry<String, Coder> remoteOutputCoder :
           descriptor.getRemoteOutputCoders().entrySet()) {
         String bundleOutputPCollection =
             Iterables.getOnlyElement(
@@ -162,13 +165,25 @@ public class SingleEnvironmentInstanceJobBundleFactory implements JobBundleFacto
                     .getTransformsOrThrow(remoteOutputCoder.getKey())
                     .getInputsMap()
                     .values());
-        FnDataReceiver<WindowedValue<?>> outputReceiver =
-            outputReceiverFactory.create(bundleOutputPCollection);
+        FnDataReceiver<?> outputReceiver = outputReceiverFactory.create(bundleOutputPCollection);
         outputReceivers.put(
             remoteOutputCoder.getKey(),
             RemoteOutputReceiver.of(remoteOutputCoder.getValue(), outputReceiver));
       }
-      return processor.newBundle(outputReceivers, stateRequestHandler, progressHandler);
+      Map<KV<String, String>, RemoteOutputReceiver<Timer<?>>> timerReceivers = new HashMap<>();
+      for (Map.Entry<String, Map<String, TimerSpec>> transformTimerSpecs :
+          descriptor.getTimerSpecs().entrySet()) {
+        for (TimerSpec timerSpec : transformTimerSpecs.getValue().values()) {
+          FnDataReceiver<Timer<?>> receiver =
+              (FnDataReceiver)
+                  timerReceiverFactory.create(timerSpec.transformId(), timerSpec.timerId());
+          timerReceivers.put(
+              KV.of(timerSpec.transformId(), timerSpec.timerId()),
+              RemoteOutputReceiver.of(timerSpec.coder(), receiver));
+        }
+      }
+      return processor.newBundle(
+          outputReceivers, timerReceivers, stateRequestHandler, progressHandler);
     }
 
     @Override

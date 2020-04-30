@@ -34,6 +34,7 @@ import java.util.TreeMap;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import javax.annotation.Nullable;
 import org.apache.beam.runners.core.SideInputReader;
@@ -764,13 +765,18 @@ public class SparkCombineFn<InputT, ValueT, AccumT, OutputT> implements Serializ
   }
 
   Iterable<WindowedValue<OutputT>> extractOutput(WindowedAccumulator<?, ?, AccumT, ?> accumulator) {
+    return extractOutputStream(accumulator).collect(Collectors.toList());
+  }
+
+  /** Extracts the stream of accumulated values. */
+  public Stream<WindowedValue<OutputT>> extractOutputStream(
+      WindowedAccumulator<?, ?, AccumT, ?> accumulator) {
     return accumulator.extractOutput().stream()
-        .filter(o -> o != null)
+        .filter(Objects::nonNull)
         .map(
             windowAcc ->
                 windowAcc.withValue(
-                    combineFn.extractOutput(windowAcc.getValue(), ctxtForValue(windowAcc))))
-        .collect(Collectors.toList());
+                    combineFn.extractOutput(windowAcc.getValue(), ctxtForValue(windowAcc))));
   }
 
   WindowedAccumulatorCoder<InputT, ValueT, AccumT> accumulatorCoder(

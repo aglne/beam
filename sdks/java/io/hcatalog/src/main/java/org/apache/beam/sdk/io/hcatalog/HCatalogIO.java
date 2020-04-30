@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.hadoop.WritableCoder;
@@ -71,7 +72,7 @@ import org.slf4j.LoggerFactory;
  * <p>HCatalog source supports reading of HCatRecord from a HCatalog managed source, for eg. Hive.
  *
  * <p>To configure a HCatalog source, you must specify a metastore URI and a table name. Other
- * optional parameters are database &amp; filter For instance:
+ * optional parameters are database &amp; filter. For instance:
  *
  * <pre>{@code
  * Map<String, String> configProperties = new HashMap<>();
@@ -104,8 +105,8 @@ import org.slf4j.LoggerFactory;
  * <p>HCatalog sink supports writing of HCatRecord to a HCatalog managed source, for eg. Hive.
  *
  * <p>To configure a HCatalog sink, you must specify a metastore URI and a table name. Other
- * optional parameters are database, partition &amp; batchsize The destination table should exist
- * beforehand, the transform does not create a new table if it does not exist For instance:
+ * optional parameters are database, partition &amp; batchsize. The destination table should exist
+ * beforehand, the transform does not create a new table if it does not exist. For instance:
  *
  * <pre>{@code
  * Map<String, String> configProperties = new HashMap<>();
@@ -121,7 +122,7 @@ import org.slf4j.LoggerFactory;
  *       .withBatchSize(1024L)) //optional, assumes a default batch size of 1024 if none specified
  * }</pre>
  */
-@Experimental(Experimental.Kind.SOURCE_SINK)
+@Experimental(Kind.SOURCE_SINK)
 public class HCatalogIO {
 
   private static final Logger LOG = LoggerFactory.getLogger(HCatalogIO.class);

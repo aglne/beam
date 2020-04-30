@@ -36,6 +36,7 @@ import java.util.Collection;
 import java.util.List;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -135,9 +136,15 @@ import org.slf4j.LoggerFactory;
  *     .apply(FileIO.readMatches().withCompression(GZIP))
  *     .apply(MapElements
  *         // uses imports from TypeDescriptors
- *         .into(KVs(strings(), strings()))
- *         .via((ReadableFile f) -> KV.of(
- *             f.getMetadata().resourceId().toString(), f.readFullyAsUTF8String())));
+ *         .into(kvs(strings(), strings()))
+ *         .via((ReadableFile f) -> {
+ *           try {
+ *             return KV.of(
+ *                 f.getMetadata().resourceId().toString(), f.readFullyAsUTF8String());
+ *           } catch (IOException ex) {
+ *             throw new RuntimeException("Failed to read the file", ex);
+ *           }
+ *         }));
  * }</pre>
  *
  * <h2>Writing files</h2>
@@ -237,7 +244,7 @@ import org.slf4j.LoggerFactory;
  * type to the sink's <i>output type</i>.
  *
  * <p>However, when using dynamic destinations, in many such cases the destination needs to be
- * extract from the original type, so such a conversion is not possible. For example, one might
+ * extracted from the original type, so such a conversion is not possible. For example, one might
  * write events of a custom class {@code Event} to a text sink, using the event's "type" as a
  * destination. In that case, specify an <i>output function</i> in {@link Write#via(Contextful,
  * Contextful)} or {@link Write#via(Contextful, Sink)}.
@@ -245,7 +252,7 @@ import org.slf4j.LoggerFactory;
  * <h3>Example: Writing CSV files</h3>
  *
  * <pre>{@code
- * class CSVSink implements FileSink<List<String>> {
+ * class CSVSink implements FileIO.Sink<List<String>> {
  *   private String header;
  *   private PrintWriter writer;
  *
@@ -262,7 +269,7 @@ import org.slf4j.LoggerFactory;
  *     writer.println(Joiner.on(",").join(element));
  *   }
  *
- *   public void finish() throws IOException {
+ *   public void flush() throws IOException {
  *     writer.flush();
  *   }
  * }
@@ -270,13 +277,13 @@ import org.slf4j.LoggerFactory;
  * PCollection<BankTransaction> transactions = ...;
  * // Convert transactions to strings before writing them to the CSV sink.
  * transactions.apply(MapElements
- *         .into(lists(strings()))
+ *         .into(TypeDescriptors.lists(TypeDescriptors.strings()))
  *         .via(tx -> Arrays.asList(tx.getUser(), tx.getAmount())))
  *     .apply(FileIO.<List<String>>write()
- *         .via(new CSVSink(Arrays.asList("user", "amount"))
+ *         .via(new CSVSink(Arrays.asList("user", "amount")))
  *         .to(".../path/to/")
  *         .withPrefix("transactions")
- *         .withSuffix(".csv")
+ *         .withSuffix(".csv"));
  * }</pre>
  *
  * <h3>Example: Writing CSV files to different directories and with different headers</h3>
@@ -556,7 +563,7 @@ public class FileIO {
      *
      * <p>This works only in runners supporting {@link Experimental.Kind#SPLITTABLE_DO_FN}.
      */
-    @Experimental(Experimental.Kind.SPLITTABLE_DO_FN)
+    @Experimental(Kind.SPLITTABLE_DO_FN)
     public Match continuously(
         Duration pollInterval, TerminationCondition<String, ?> terminationCondition) {
       return withConfiguration(getConfiguration().continuously(pollInterval, terminationCondition));
@@ -605,7 +612,7 @@ public class FileIO {
     }
 
     /** Like {@link Match#continuously}. */
-    @Experimental(Experimental.Kind.SPLITTABLE_DO_FN)
+    @Experimental(Kind.SPLITTABLE_DO_FN)
     public MatchAll continuously(
         Duration pollInterval, TerminationCondition<String, ?> terminationCondition) {
       return withConfiguration(getConfiguration().continuously(pollInterval, terminationCondition));
@@ -819,7 +826,7 @@ public class FileIO {
 
   /** Implementation of {@link #write} and {@link #writeDynamic}. */
   @AutoValue
-  @Experimental(Experimental.Kind.SOURCE_SINK)
+  @Experimental(Kind.SOURCE_SINK)
   public abstract static class Write<DestinationT, UserT>
       extends PTransform<PCollection<UserT>, WriteFilesResult<DestinationT>> {
     /** A policy for generating names for shard files. */

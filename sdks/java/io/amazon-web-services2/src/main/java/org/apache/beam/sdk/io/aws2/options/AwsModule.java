@@ -20,7 +20,9 @@ package org.apache.beam.sdk.io.aws2.options;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.type.WritableTypeId;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
@@ -36,6 +38,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Map;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -51,7 +54,7 @@ import software.amazon.awssdk.http.apache.ProxyConfiguration;
  * A Jackson {@link Module} that registers a {@link JsonSerializer} and {@link JsonDeserializer} for
  * {@link AwsCredentialsProvider} and some subclasses. The serialized form is a JSON map.
  */
-@Experimental(Experimental.Kind.SOURCE_SINK)
+@Experimental(Kind.SOURCE_SINK)
 @AutoService(Module.class)
 public class AwsModule extends SimpleModule {
   private static final String ACCESS_KEY_ID = "accessKeyId";
@@ -139,7 +142,9 @@ public class AwsModule extends SimpleModule {
         SerializerProvider serializer,
         TypeSerializer typeSerializer)
         throws IOException {
-      typeSerializer.writeTypePrefixForObject(credentialsProvider, jsonGenerator);
+      WritableTypeId typeId =
+          typeSerializer.writeTypePrefix(
+              jsonGenerator, typeSerializer.typeId(credentialsProvider, JsonToken.START_OBJECT));
       if (credentialsProvider.getClass().equals(StaticCredentialsProvider.class)) {
         jsonGenerator.writeStringField(
             ACCESS_KEY_ID, credentialsProvider.resolveCredentials().accessKeyId());
@@ -149,7 +154,7 @@ public class AwsModule extends SimpleModule {
         throw new IllegalArgumentException(
             "Unsupported AWS credentials provider type " + credentialsProvider.getClass());
       }
-      typeSerializer.writeTypeSuffixForObject(credentialsProvider, jsonGenerator);
+      typeSerializer.writeTypeSuffix(jsonGenerator, typeId);
     }
   }
 

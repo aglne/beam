@@ -72,7 +72,9 @@ public class DoFnLifecycleManagerRemovingTransformEvaluatorTest {
   @Test
   public void removesOnExceptionInProcessElement() throws Exception {
     ParDoEvaluator<Object> underlying = mock(ParDoEvaluator.class);
-    doThrow(Exception.class).when(underlying).processElement(any(WindowedValue.class));
+    doThrow(IllegalArgumentException.class)
+        .when(underlying)
+        .processElement(any(WindowedValue.class));
 
     DoFn<?, ?> original = lifecycleManager.get();
     assertThat(original, not(nullValue()));
@@ -91,9 +93,9 @@ public class DoFnLifecycleManagerRemovingTransformEvaluatorTest {
   @Test
   public void removesOnExceptionInOnTimer() throws Exception {
     ParDoEvaluator<Object> underlying = mock(ParDoEvaluator.class);
-    doThrow(Exception.class)
+    doThrow(IllegalArgumentException.class)
         .when(underlying)
-        .onTimer(any(TimerData.class), any(BoundedWindow.class));
+        .onTimer(any(TimerData.class), any(Object.class), any(BoundedWindow.class));
 
     DoFn<?, ?> original = lifecycleManager.get();
     assertThat(original, not(nullValue()));
@@ -103,6 +105,7 @@ public class DoFnLifecycleManagerRemovingTransformEvaluatorTest {
     try {
       evaluator.onTimer(
           TimerData.of("foo", StateNamespaces.global(), new Instant(0), TimeDomain.EVENT_TIME),
+          "",
           GlobalWindow.INSTANCE);
     } catch (Exception e) {
       assertThat(lifecycleManager.get(), not(Matchers.theInstance(original)));
@@ -114,7 +117,7 @@ public class DoFnLifecycleManagerRemovingTransformEvaluatorTest {
   @Test
   public void removesOnExceptionInFinishBundle() throws Exception {
     ParDoEvaluator<Object> underlying = mock(ParDoEvaluator.class);
-    doThrow(Exception.class).when(underlying).finishBundle();
+    doThrow(IllegalArgumentException.class).when(underlying).finishBundle();
 
     DoFn<?, ?> original = lifecycleManager.get();
     // the LifecycleManager is set when the evaluator starts

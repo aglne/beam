@@ -25,6 +25,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.apache.beam.model.jobmanagement.v1.JobApi;
+import org.apache.beam.runners.fnexecution.jobsubmission.PortablePipelineResult;
 import org.apache.beam.runners.spark.metrics.MetricsAccumulator;
 import org.apache.beam.runners.spark.translation.SparkContextFactory;
 import org.apache.beam.sdk.Pipeline;
@@ -35,6 +37,8 @@ import org.apache.spark.SparkException;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.joda.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Represents a Spark pipeline execution result. */
 public abstract class SparkPipelineResult implements PipelineResult {
@@ -139,6 +143,22 @@ public abstract class SparkPipelineResult implements PipelineResult {
         pipelineExecution.get();
       }
       return PipelineResult.State.DONE;
+    }
+  }
+
+  static class PortableBatchMode extends BatchMode implements PortablePipelineResult {
+
+    private static final Logger LOG = LoggerFactory.getLogger(BatchMode.class);
+
+    PortableBatchMode(Future<?> pipelineExecution, JavaSparkContext javaSparkContext) {
+      super(pipelineExecution, javaSparkContext);
+    }
+
+    @Override
+    public JobApi.MetricResults portableMetrics() {
+      return JobApi.MetricResults.newBuilder()
+          .addAllAttempted(MetricsAccumulator.getInstance().value().getMonitoringInfos())
+          .build();
     }
   }
 

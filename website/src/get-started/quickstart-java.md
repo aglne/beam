@@ -34,9 +34,9 @@ If you're interested in contributing to the Apache Beam Java codebase, see the [
 
 ## Set up your Development Environment
 
-1. Download and install the [Java Development Kit (JDK)](http://www.oracle.com/technetwork/java/javase/downloads/index.html) version 8. Verify that the [JAVA_HOME](https://docs.oracle.com/javase/8/docs/technotes/guides/troubleshoot/envvars001.html) environment variable is set and points to your JDK installation.
+1. Download and install the [Java Development Kit (JDK)](https://www.oracle.com/technetwork/java/javase/downloads/index.html) version 8. Verify that the [JAVA_HOME](https://docs.oracle.com/javase/8/docs/technotes/guides/troubleshoot/envvars001.html) environment variable is set and points to your JDK installation.
 
-1. Download and install [Apache Maven](http://maven.apache.org/download.cgi) by following Maven's [installation guide](http://maven.apache.org/install.html) for your specific operating system.
+1. Download and install [Apache Maven](https://maven.apache.org/download.cgi) by following Maven's [installation guide](https://maven.apache.org/install.html) for your specific operating system.
 
 
 ## Get the WordCount Code
@@ -168,6 +168,7 @@ Make sure you complete the setup steps at {{ site.baseurl }}/documentation/runne
 
 $ mvn compile exec:java -Dexec.mainClass=org.apache.beam.examples.WordCount \
      -Dexec.args="--runner=DataflowRunner --project=<your-gcp-project> \
+                  --region=<your-gcp-region> \
                   --gcpTempLocation=gs://<your-gcs-bucket>/tmp \
                   --inputFile=gs://apache-beam-samples/shakespeare/* --output=gs://<your-gcs-bucket>/counts" \
      -Pdataflow-runner
@@ -187,13 +188,9 @@ $ mvn package -Pnemo-runner && java -cp target/word-count-beam-bundled-0.1.jar o
 
 {:.runner-jet}
 ```
-$ mvn package -Pjet-runner -DskipTests
+$ mvn package -Pjet-runner
 $ java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.WordCount \
      --runner=JetRunner --jetLocalMode=3 --inputFile=`pwd`/pom.xml --output=counts
-     
-Please note that the Jet Runner will be present in released versions of Beam 
-only starting with 2.14.0. Until then SNAPSHOT versions need to be used when 
-generating the above Maven archetype for the examples code. 
 ```
 
 For Windows PowerShell:
@@ -237,6 +234,7 @@ Make sure you complete the setup steps at {{ site.baseurl }}/documentation/runne
 
 PS> mvn compile exec:java -D exec.mainClass=org.apache.beam.examples.WordCount `
  -D exec.args="--runner=DataflowRunner --project=<your-gcp-project> `
+               --region=<your-gcp-region> \
                --gcpTempLocation=gs://<your-gcs-bucket>/tmp `
                --inputFile=gs://apache-beam-samples/shakespeare/* --output=gs://<your-gcs-bucket>/counts" `
  -P dataflow-runner
@@ -257,13 +255,9 @@ PS> java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.Wor
 
 {:.runner-jet}
 ```
-PS> mvn package -P jet-runner -DskipTests
+PS> mvn package -P jet-runner
 PS> java -cp target/word-count-beam-bundled-0.1.jar org.apache.beam.examples.WordCount `
       --runner=JetRunner --jetLocalMode=3 --inputFile=$pwd/pom.xml --output=counts
-     
-Please note that the Jet Runner will be present in released versions of Beam 
-only starting with 2.14.0. Until then SNAPSHOT versions need to be used when 
-generating the above Maven archetype for the examples code. 
 ```
 
 ## Inspect the results

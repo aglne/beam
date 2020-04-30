@@ -41,7 +41,8 @@ vice versa.  The framework introduces a new runner, the _Universal
 Local Runner (ULR)_, as a practical reference implementation that
 complements the direct runners. Finally, it enables cross-language
 pipelines (sharing I/O or transformations across SDKs) and
-user-customized execution environments ("custom containers").
+user-customized [execution environments]({{ site.baseurl }}/documentation/runtime/environments/)
+("custom containers").
 
 The portability API consists of a set of smaller contracts that
 isolate SDKs and runners for job submission, management and
@@ -149,29 +150,22 @@ See the
 [Portability support table](https://s.apache.org/apache-beam-portability-support-table)
 for details.
 
+Prerequisites: [Docker](https://docs.docker.com/compose/install/), [Python](https://docs.python-guide.org/starting/install3/linux/), [Java 8](https://openjdk.java.net/install/)
+
 ### Running Python wordcount on Flink {#python-on-flink}
 
-To run a basic Python wordcount (in batch mode) with embedded Flink:
-
-1. Run once to build the SDK harness container: `./gradlew :sdks:python:container:docker`
-2. Start the Flink portable JobService endpoint: `./gradlew :runners:flink:1.5:job-server:runShadow`
-3. In a new terminal, submit the wordcount pipeline to above endpoint: `./gradlew :sdks:python:portableWordCount -PjobEndpoint=localhost:8099 -PenvironmentType=LOOPBACK`
-
-To run the pipeline in streaming mode: `./gradlew :sdks:python:portableWordCount -PjobEndpoint=localhost:8099 -Pstreaming`
-
+The Beam Flink runner can run Python pipelines in batch and streaming modes.
 Please see the [Flink Runner page]({{ site.baseurl }}/documentation/runners/flink/) for more information on
 how to run portable pipelines on top of Flink.
 
 ### Running Python wordcount on Spark {#python-on-spark}
 
-To run a basic Python wordcount (in batch mode) with embedded Spark:
-
-1. Run once to build the SDK harness container: `./gradlew :sdks:python:container:docker`
-2. Start the Spark portable JobService endpoint: `./gradlew :runners:spark:job-server:runShadow`
-3. In a new terminal, submit the wordcount pipeline to above endpoint: `./gradlew :sdks:python:portableWordCount -PjobEndpoint=localhost:8099 -PenvironmentType=LOOPBACK`
-
-Python streaming mode is not yet supported on Spark.
-
+The Beam Spark runner can run Python pipelines in batch mode.
 Please see the [Spark Runner page]({{ site.baseurl }}/documentation/runners/spark/) for more information on
 how to run portable pipelines on top of Spark.
 
+Python streaming mode is not yet supported on Spark.
+
+## SDK Harness Configuration {#sdk-harness-config}
+
+See [here]({{ site.baseurl }}/documentation/runtime/sdk-harness-config/) for more information on SDK harness deployment options.

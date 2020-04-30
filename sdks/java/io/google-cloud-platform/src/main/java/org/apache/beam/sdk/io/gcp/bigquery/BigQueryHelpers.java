@@ -36,6 +36,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import javax.annotation.Nullable;
@@ -471,8 +472,7 @@ public class BigQueryHelpers {
     }
   }
 
-  @VisibleForTesting
-  static String toJsonString(Object item) {
+  public static String toJsonString(Object item) {
     if (item == null) {
       return null;
     }
@@ -485,8 +485,7 @@ public class BigQueryHelpers {
     }
   }
 
-  @VisibleForTesting
-  static <T> T fromJsonString(String json, Class<T> clazz) {
+  public static <T> T fromJsonString(String json, Class<T> clazz) {
     if (json == null) {
       return null;
     }
@@ -694,12 +693,13 @@ public class BigQueryHelpers {
     return String.format("%s-extract", jobIdToken);
   }
 
-  static TableReference createTempTableReference(String projectId, String jobUuid) {
-    String queryTempDatasetId = "temp_dataset_" + jobUuid;
+  static TableReference createTempTableReference(
+      String projectId, String jobUuid, Optional<String> tempDatasetIdOpt) {
+    String tempDatasetId = tempDatasetIdOpt.orElse("temp_dataset_" + jobUuid);
     String queryTempTableId = "temp_table_" + jobUuid;
     return new TableReference()
         .setProjectId(projectId)
-        .setDatasetId(queryTempDatasetId)
+        .setDatasetId(tempDatasetId)
         .setTableId(queryTempTableId);
   }
 

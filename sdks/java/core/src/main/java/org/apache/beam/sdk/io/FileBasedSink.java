@@ -140,6 +140,12 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
     /** @see Compression#ZSTD */
     ZSTD(Compression.ZSTD),
 
+    /** @see Compression#LZO */
+    LZO(Compression.LZO),
+
+    /** @see Compression#LZOP */
+    LZOP(Compression.LZOP),
+
     /** @see Compression#DEFLATE */
     DEFLATE(Compression.DEFLATE);
 
@@ -184,6 +190,12 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
 
         case ZSTD:
           return ZSTD;
+
+        case LZO:
+          return LZO;
+
+        case LZOP:
+          return LZOP;
 
         case DEFLATE:
           return DEFLATE;
@@ -791,7 +803,10 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
                   FileSystems.match(Collections.singletonList(tempDir.toString() + "*")));
           for (Metadata matchResult : singleMatch.metadata()) {
             if (allMatches.add(matchResult.resourceId())) {
-              LOG.info("Will also remove unknown temporary file {}", matchResult.resourceId());
+              LOG.warn(
+                  "Will also remove unknown temporary file {}. This might indicate that other process/job is using "
+                      + "the same temporary folder and result in data consistency issues.",
+                  matchResult.resourceId());
             }
           }
         } catch (Exception e) {
@@ -962,8 +977,9 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
       } catch (Exception e) {
         LOG.error("Closing channel for {} failed.", filename, e);
         prior.addSuppressed(e);
-        throw prior;
       }
+      // We should fail here regardless of whether above channel.close() call failed or not.
+      throw prior;
     }
 
     public final void cleanup() throws Exception {

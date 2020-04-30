@@ -36,12 +36,12 @@ digraph execution_plan {
   bgcolor="lightgray";
   style="solid";
   penwidth="0.5";
-	concentrate="true";
+  concentrate="true";
 
-	// Node definition used for multiedge
+  // Node definition used for multiedge
   node [shape="rectangle" style="filled" fillcolor="honeydew" fontname="Ubuntu" penwidth="1.0" margin="0.05,0.0.05"];
 
-	bgcolor="#e6ecfa";
+  bgcolor="#e6ecfa";
 `
 
 	nodeText = `  "{{.Name}}" [ shape="ellipse" fillcolor = "lightblue" label="{{.Label}}"]
@@ -107,7 +107,12 @@ func Render(edges []*graph.MultiEdge, nodes []*graph.Node, w io.Writer) error {
 
 	// Render the graph elements: nodes and the edges
 	w.Write([]byte(header))
-	for node := range uniqNodes {
+	seen := make(map[*graph.Node]bool)
+	for _, node := range nodes {
+		if seen[node] {
+			continue
+		}
+		seen[node] = true
 		err := nodeTmpl.Execute(w, struct{ Name, Label string }{node.String(), uniqNodes[node].String()})
 		if err != nil {
 			return err

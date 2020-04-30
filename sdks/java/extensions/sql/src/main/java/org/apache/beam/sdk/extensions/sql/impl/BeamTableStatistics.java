@@ -21,19 +21,19 @@ import java.io.Serializable;
 import java.util.List;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Internal;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.apache.calcite.rel.RelCollation;
-import org.apache.calcite.rel.RelDistribution;
-import org.apache.calcite.rel.RelDistributionTraitDef;
-import org.apache.calcite.rel.RelReferentialConstraint;
-import org.apache.calcite.schema.Statistic;
-import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.beam.vendor.calcite.v1_20_0.com.google.common.collect.ImmutableList;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelCollation;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelDistribution;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelDistributionTraitDef;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelReferentialConstraint;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.schema.Statistic;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.util.ImmutableBitSet;
 
 /** This class stores row count statistics. */
 @Experimental
 @Internal
 public class BeamTableStatistics implements Serializable, Statistic {
-  public static final BeamTableStatistics UNKNOWN = new BeamTableStatistics(100d, 0d, true);
+  public static final BeamTableStatistics BOUNDED_UNKNOWN = new BeamTableStatistics(100d, 0d, true);
   public static final BeamTableStatistics UNBOUNDED_UNKNOWN =
       new BeamTableStatistics(0d, 0.1, true);
   private final boolean unknown;

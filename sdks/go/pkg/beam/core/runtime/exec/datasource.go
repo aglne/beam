@@ -37,11 +37,13 @@ type DataSource struct {
 	Coder *coder.Coder
 	Out   Node
 
-	source   DataManager
-	state    StateReader
-	count    int64
-	splitPos int64
-	start    time.Time
+	source DataManager
+	state  StateReader
+	// TODO(lostluck) 2020/02/06: refactor to support more general PCollection metrics on nodes.
+	outputPID string // The index is the output count for the PCollection.
+	index     int64
+	splitIdx  int64
+	start     time.Time
 
 	mu sync.Mutex
 }
@@ -62,8 +64,8 @@ func (n *DataSource) StartBundle(ctx context.Context, id string, data DataContex
 	n.source = data.Data
 	n.state = data.State
 	n.start = time.Now()
-	n.count = 0
-	n.splitPos = math.MaxInt64
+	n.index = -1
+	n.splitIdx = math.MaxInt64
 	n.mu.Unlock()
 	return n.Out.StartBundle(ctx, id, data)
 }
@@ -94,7 +96,7 @@ func (n *DataSource) Process(ctx context.Context) error {
 	}
 
 	for {
-		if n.IncrementCountAndCheckSplit(ctx) {
+		if n.incrementIndexAndCheckSplit() {
 			return nil
 		}
 		ws, t, err := DecodeWindowedValueHeader(wc, r)
@@ -137,7 +139,7 @@ func (n *DataSource) makeReStream(ctx context.Context, key *FullValue, cv Elemen
 	switch {
 	case size >= 0:
 		// Single chunk streams are fully read in and buffered in memory.
-		var buf []FullValue
+		buf := make([]FullValue, 0, size)
 		buf, err = readStreamToBuffer(cv, r, int64(size), buf)
 		if err != nil {
 			return nil, err
@@ -156,10 +158,12 @@ func (n *DataSource) makeReStream(ctx context.Context, key *FullValue, cv Elemen
 			case chunk == 0: // End of stream, return buffer.
 				return &FixedReStream{Buf: buf}, nil
 			case chunk > 0: // Non-zero chunk, read that many elements from the stream, and buffer them.
-				buf, err = readStreamToBuffer(cv, r, chunk, buf)
+				chunkBuf := make([]FullValue, 0, chunk)
+				chunkBuf, err = readStreamToBuffer(cv, r, chunk, chunkBuf)
 				if err != nil {
 					return nil, err
 				}
+				buf = append(buf, chunkBuf...)
 			case chunk == -1: // State backed iterable!
 				chunk, err := coder.DecodeVarInt(r)
 				if err != nil {
@@ -201,16 +205,14 @@ func readStreamToBuffer(cv ElementDecoder, r io.ReadCloser, size int64, buf []Fu
 	return buf, nil
 }
 
-// FinishBundle resets the source and metric counters.
+// FinishBundle resets the source.
 func (n *DataSource) FinishBundle(ctx context.Context) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	log.Infof(ctx, "DataSource: %d elements in %d ns", n.count, time.Now().Sub(n.start))
+	log.Infof(ctx, "DataSource: %d elements in %d ns", n.index, time.Now().Sub(n.start))
 	n.source = nil
-	err := n.Out.FinishBundle(ctx)
-	n.count = 0
-	n.splitPos = math.MaxInt64
-	return err
+	n.splitIdx = 0 // Ensure errors are returned for split requests if this plan is re-used.
+	return n.Out.FinishBundle(ctx)
 }
 
 // Down resets the source.
@@ -223,15 +225,15 @@ func (n *DataSource) String() string {
 	return fmt.Sprintf("DataSource[%v, %v] Coder:%v Out:%v", n.SID, n.Name, n.Coder, n.Out.ID())
 }
 
-// IncrementCountAndCheckSplit increments DataSource.count by one and checks if
+// incrementIndexAndCheckSplit increments DataSource.index by one and checks if
 // the caller should abort further element processing, and finish the bundle.
-// Returns true if the new value of count is greater than or equal to the split
-// point, and false otherwise.
-func (n *DataSource) IncrementCountAndCheckSplit(ctx context.Context) bool {
+// Returns true if the new value of index is greater than or equal to the split
+// index, and false otherwise.
+func (n *DataSource) incrementIndexAndCheckSplit() bool {
 	b := false
 	n.mu.Lock()
-	n.count++
-	if n.count >= n.splitPos {
+	n.index++
+	if n.index >= n.splitIdx {
 		b = true
 	}
 	n.mu.Unlock()
@@ -239,9 +241,12 @@ func (n *DataSource) IncrementCountAndCheckSplit(ctx context.Context) bool {
 }
 
 // ProgressReportSnapshot captures the progress reading an input source.
+//
+// TODO(lostluck) 2020/02/06: Add a visitor pattern for collecting progress
+// metrics from downstream Nodes.
 type ProgressReportSnapshot struct {
-	ID, Name string
-	Count    int64
+	ID, Name, PID string
+	Count         int64
 }
 
 // Progress returns a snapshot of the source's progress.
@@ -250,15 +255,21 @@ func (n *DataSource) Progress() ProgressReportSnapshot {
 		return ProgressReportSnapshot{}
 	}
 	n.mu.Lock()
-	c := n.count
+	// The count is the number of "completely processed elements"
+	// which matches the index of the currently processing element.
+	c := n.index
 	n.mu.Unlock()
-	return ProgressReportSnapshot{n.SID.PtransformID, n.Name, c}
+	// Do not sent negative progress reports, index is initialized to 0.
+	if c < 0 {
+		c = 0
+	}
+	return ProgressReportSnapshot{PID: n.outputPID, ID: n.SID.PtransformID, Name: n.Name, Count: c}
 }
 
-// Split takes a sorted set of potential split points, selects and actuates
-// split on an appropriate split point, and returns the selected split point
+// Split takes a sorted set of potential split indices, selects and actuates
+// split on an appropriate split index, and returns the selected split index
 // if successful. Returns an error when unable to split.
-func (n *DataSource) Split(splits []int64, frac float32) (int64, error) {
+func (n *DataSource) Split(splits []int64, frac float64) (int64, error) {
 	if splits == nil {
 		return 0, fmt.Errorf("failed to split: requested splits were empty")
 	}
@@ -266,19 +277,20 @@ func (n *DataSource) Split(splits []int64, frac float32) (int64, error) {
 		return 0, fmt.Errorf("failed to split at requested splits: {%v}, DataSource not initialized", splits)
 	}
 	n.mu.Lock()
-	c := n.count
+	c := n.index
 	// Find the smallest split index that we haven't yet processed, and set
-	// the promised split position to this value.
+	// the promised split index to this value.
 	for _, s := range splits {
-		if s >= c && s < n.splitPos {
-			n.splitPos = s
-			fs := n.splitPos
+		// // Never split on the first element, or the current element.
+		if s > 0 && s > c && s <= n.splitIdx {
+			n.splitIdx = s
+			fs := n.splitIdx
 			n.mu.Unlock()
 			return fs, nil
 		}
 	}
 	n.mu.Unlock()
-	// If we can't find a suitable split point from the requested choices,
+	// If we can't find a suitable split index from the requested choices,
 	// return an error.
 	return 0, fmt.Errorf("failed to split at requested splits: {%v}, DataSource at index: %v", splits, c)
 }

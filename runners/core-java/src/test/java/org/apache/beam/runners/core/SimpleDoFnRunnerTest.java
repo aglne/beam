@@ -36,6 +36,7 @@ import org.apache.beam.sdk.state.TimerSpec;
 import org.apache.beam.sdk.state.TimerSpecs;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFnSchemaInformation;
+import org.apache.beam.sdk.transforms.reflect.DoFnSignature.TimerDeclaration;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
@@ -88,7 +89,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     thrown.expect(UserCodeException.class);
     thrown.expectCause(is(fn.exceptionToThrow));
@@ -111,13 +113,20 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     thrown.expect(UserCodeException.class);
     thrown.expectCause(is(fn.exceptionToThrow));
 
     runner.onTimer(
-        ThrowingDoFn.TIMER_ID, GlobalWindow.INSTANCE, new Instant(0), TimeDomain.EVENT_TIME);
+        TimerDeclaration.PREFIX + ThrowingDoFn.TIMER_ID,
+        "",
+        null,
+        GlobalWindow.INSTANCE,
+        new Instant(0),
+        new Instant(0),
+        TimeDomain.EVENT_TIME);
   }
 
   /**
@@ -141,7 +150,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     // Setting the timer needs the current time, as it is set relative
     Instant currentTime = new Instant(42);
@@ -152,7 +162,9 @@ public class SimpleDoFnRunnerTest {
     verify(mockTimerInternals)
         .setTimer(
             StateNamespaces.window(new GlobalWindows().windowCoder(), GlobalWindow.INSTANCE),
-            DoFnWithTimers.TIMER_ID,
+            TimerDeclaration.PREFIX + DoFnWithTimers.TIMER_ID,
+            "",
+            currentTime.plus(DoFnWithTimers.TIMER_OFFSET),
             currentTime.plus(DoFnWithTimers.TIMER_OFFSET),
             TimeDomain.EVENT_TIME);
   }
@@ -172,7 +184,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     thrown.expect(UserCodeException.class);
     thrown.expectCause(is(fn.exceptionToThrow));
@@ -195,7 +208,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     thrown.expect(UserCodeException.class);
     thrown.expectCause(is(fn.exceptionToThrow));
@@ -222,7 +236,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(windowFn),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     Instant currentTime = new Instant(42);
     Duration offset = Duration.millis(37);
@@ -230,8 +245,11 @@ public class SimpleDoFnRunnerTest {
     // Mocking is not easily compatible with annotation analysis, so we manually record
     // the method call.
     runner.onTimer(
-        DoFnWithTimers.TIMER_ID,
+        TimerDeclaration.PREFIX + DoFnWithTimers.TIMER_ID,
+        "",
+        null,
         GlobalWindow.INSTANCE,
+        currentTime.plus(offset),
         currentTime.plus(offset),
         TimeDomain.EVENT_TIME);
 
@@ -240,7 +258,9 @@ public class SimpleDoFnRunnerTest {
         contains(
             TimerData.of(
                 DoFnWithTimers.TIMER_ID,
+                "",
                 StateNamespaces.window(windowFn.windowCoder(), GlobalWindow.INSTANCE),
+                currentTime.plus(offset),
                 currentTime.plus(offset),
                 TimeDomain.EVENT_TIME)));
   }
@@ -264,7 +284,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     runner.startBundle();
     // An element output at the current timestamp is fine.
@@ -303,7 +324,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     runner.startBundle();
     // Outputting between "now" and "now - allowed skew" succeeds.
@@ -343,7 +365,8 @@ public class SimpleDoFnRunnerTest {
             null,
             Collections.emptyMap(),
             WindowingStrategy.of(new GlobalWindows()),
-            DoFnSchemaInformation.create());
+            DoFnSchemaInformation.create(),
+            Collections.emptyMap());
 
     runner.startBundle();
     runner.processElement(
